@@ -1,0 +1,6 @@
+$ pnpm -r typecheck
+Scope: 2 of 3 workspace projects
+packages/shared typecheck$ tsc -p tsconfig.json --noEmit
+packages/shared typecheck: Done
+packages/server typecheck$ tsc -p tsconfig.json --noEmit
+packages/server typecheck: Done

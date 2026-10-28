@@ -1,0 +1,47 @@
+# Node / build artifacts
+node_modules/
+dist/
+*.tsbuildinfo
+logs/
+pnpm-debug.log*
+
+# Release archives (produced by scripts/pack-bridge.ps1)
+dist-release/
+
+# Environment / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Unreal Engine build outputs
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# IDE
+.vs/
+.idea/
+*.sln
+*.code-workspace
+
+# Version control internals
+.svn/
+
+# Collaboration / session artifacts (internal tooling)
+.heihei/
+
+# Local test-run artifacts (assertion runners, audit dirs, pid files)
+.test-run/
+*.pid

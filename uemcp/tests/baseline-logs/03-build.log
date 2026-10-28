@@ -1,0 +1,18 @@
+$ pnpm -r build
+Scope: 2 of 3 workspace projects
+packages/shared build$ tsc -p tsconfig.json
+packages/shared build: Done
+packages/server build$ tsup
+packages/server build: CLI Building entry: src/index.ts
+packages/server build: CLI Using tsconfig: tsconfig.json
+packages/server build: CLI tsup v8.5.1
+packages/server build: CLI Using tsup config: C:\UE5_P\5.4\UEMCP-OpenSource\uemcp\packages\server\tsup.config.ts
+packages/server build: CLI Target: node20
+packages/server build: CLI Cleaning output folder
+packages/server build: ESM Build start
+packages/server build: ESM dist\index.js 67.18 KB
+packages/server build: ESM ⚡️ Build success in 26ms
+packages/server build: DTS Build start
+packages/server build: DTS ⚡️ Build success in 952ms
+packages/server build: DTS dist\index.d.ts 13.00 B
+packages/server build: Done

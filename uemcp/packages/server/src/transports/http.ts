@@ -1,0 +1,444 @@
+/**
+ * Streamable HTTP + 旧版 SSE 传输（§3.3/§3.4）+ /health。
+ * - 仅回环绑定；Host 校验 421 / Origin 校验 403 / OPTIONS 405
+ * - 可选 Bearer 鉴权（§6.6 常量时间比较）
+ * - 会话：Mcp-Session-Id、TTL、上限 32（429）、DELETE 204、未知 404/-32001
+ * - EADDRINUSE：2 秒内 exit 2（§2.3/D10）
+ * - 协议层错误（§2.9.2/§2.9.4）：信封/未知工具 400 -32602、未知 method 404 -32601
+ */
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+  type RequestHandler,
+} from "express";
+import { Server } from "node:http";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { FULL_TOOL_CATALOG } from "@uemcp/shared";
+import type { ToolContext } from "../tools/common.js";
+import {
+  buildMcpServer,
+  PROTOCOL_VERSIONS,
+  SERVER_NAME,
+  SERVER_VERSION,
+} from "../mcp/buildServer.js";
+import type { ServerOptions } from "../config.js";
+import type { Logger } from "../logger.js";
+import type { Audit } from "../audit.js";
+
+const MAX_SESSIONS = 32;
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
+const KNOWN_METHODS = new Set([
+  "initialize",
+  "notifications/initialized",
+  "ping",
+  "tools/list",
+  "tools/call",
+]);
+
+// §6.7 速率限制：每会话 20 req/s、突发 40（令牌桶；协议层 429 + RATE_LIMITED；stdio 不适用）
+const RATE_PER_SEC = 20;
+const RATE_BURST = 40;
+const rateBuckets = new Map<string, { tokens: number; last: number }>();
+function rateAllow(key: string): boolean {
+  const now = Date.now();
+  let b = rateBuckets.get(key);
+  if (!b) {
+    b = { tokens: RATE_BURST, last: now };
+    rateBuckets.set(key, b);
+  }
+  b.tokens = Math.min(RATE_BURST, b.tokens + ((now - b.last) / 1000) * RATE_PER_SEC);
+  b.last = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
+type SessionEntry =
+  | { kind: "streamable"; transport: StreamableHTTPServerTransport; lastSeen: number }
+  | {
+      kind: "legacy";
+      transport: SSEServerTransport;
+      lastSeen: number;
+      heartbeat?: NodeJS.Timeout;
+    };
+
+export interface HttpTransportHandles {
+  app: Express;
+  server: Server;
+  sessionCount(): number;
+  close(): Promise<void>;
+}
+
+const asyncHandler =
+  (fn: (req: Request, res: Response) => Promise<void>): RequestHandler =>
+  (req, res, next) => {
+    fn(req, res).catch(next);
+  };
+
+export function startHttp(
+  opts: ServerOptions,
+  ctx: ToolContext,
+  log: Logger,
+  audit: Audit,
+): Promise<HttpTransportHandles> {
+  const app = express();
+  const sessions = new Map<string, SessionEntry>();
+  const startedAt = Date.now();
+  const server = new Server(app);
+  app.disable("x-powered-by");
+
+  const boundPort = (): number =>
+    (server.address() as { port: number } | null)?.port ?? opts.port;
+
+  // —— 安全中间件（§6.2）——
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const remote = req.socket.remoteAddress ?? "";
+    if (remote !== "127.0.0.1" && remote !== "::1" && remote !== "::ffff:127.0.0.1") {
+      res.destroy();
+      return;
+    }
+    if (req.method === "OPTIONS") {
+      res.status(405).end();
+      return;
+    }
+    const port = boundPort();
+    const host = (req.headers.host ?? "").toLowerCase();
+    if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) {
+      sendRpcError(res, 421, -32600, "INVALID_REQUEST", `Host header not allowed: ${host}`);
+      return;
+    }
+    const origin = req.headers.origin;
+    if (origin !== undefined) {
+      const ok =
+        origin === "null" ||
+        origin.toLowerCase() === `http://127.0.0.1:${port}` ||
+        origin.toLowerCase() === `http://localhost:${port}`;
+      if (!ok) {
+        sendRpcError(res, 403, -32600, "INVALID_REQUEST", `Origin not allowed: ${origin}`);
+        return;
+      }
+    }
+    if (opts.authToken) {
+      const auth = req.headers.authorization ?? "";
+      const m = /^Bearer (.+)$/.exec(auth);
+      if (!m || !safeEqual(m[1]!, opts.authToken)) {
+        sendRpcError(res, 401, -32019, "UNAUTHORIZED", "unauthorized");
+        return;
+      }
+    }
+    next();
+  });
+
+  app.use(express.json({ limit: MAX_BODY_BYTES, type: () => true }));
+
+  // 请求体超限 / 非法 JSON / 未捕获异常（§2.9.2）
+  const errorHandler = (err: unknown, _req: Request, res: Response, next: NextFunction): void => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    const e = err as { type?: string; status?: number; statusCode?: number };
+    if (e?.type === "entity.too.large" || e?.status === 413 || e?.statusCode === 413) {
+      sendRpcError(res, 413, -32011, "PAYLOAD_TOO_LARGE", "Request body exceeds 8 MiB limit");
+      return;
+    }
+    if (e?.type === "entity.parse.failed") {
+      sendRpcError(res, 400, -32700, "PARSE_ERROR", "Invalid JSON body");
+      return;
+    }
+    sendRpcError(res, 500, -32603, "INTERNAL", String((err as Error)?.message ?? err));
+  };
+
+  // —— /health ——
+  app.get("/health", (_req: Request, res: Response) => {
+    const w = ctx.watchdog.state;
+    res.json({
+      ok: true,
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+      protocolVersions: PROTOCOL_VERSIONS,
+      transports: ["streamable-http", "sse", "stdio"],
+      sessions: sessions.size,
+      uptimeSec: Math.floor((Date.now() - startedAt) / 1000),
+      pid: process.pid,
+      ...(ctx.log.file() ? { logPath: ctx.log.file() } : {}),
+      bridge: {
+        connected: w.connected,
+        ...(w.url ? { url: w.url } : {}),
+        ...(w.ueVersion ? { ueVersion: w.ueVersion } : {}),
+        ...(w.pluginVersion ? { pluginVersion: w.pluginVersion } : {}),
+        ...(w.projectDir ? { projectDir: w.projectDir } : {}),
+      },
+      ...(audit.degraded ? { auditDegraded: true } : {}),
+    });
+  });
+
+  // —— Streamable HTTP：/mcp ——
+  app.post("/mcp", asyncHandler(async (req: Request, res: Response) => {
+    let body = req.body;
+    // 协议层预校验（§2.9.4 校验顺序：信封 → 完整目录存在性 → 策略 → zod）
+    if (isJsonObject(body)) {
+      const method = body.method;
+      if (
+        typeof method === "string" &&
+        method !== "" &&
+        !KNOWN_METHODS.has(method) &&
+        !method.startsWith("notifications/")
+      ) {
+        sendRpcError(res, 404, -32601, "METHOD_NOT_FOUND", `Unknown method: ${method}`);
+        return;
+      }
+      if (method === "tools/call") {
+        const params = body.params;
+        if (!isJsonObject(params)) {
+          sendRpcError(res, 400, -32602, "INVALID_PARAMS", "tools/call params must be an object");
+          return;
+        }
+        const name = params.name;
+        if (typeof name !== "string" || name === "") {
+          sendRpcError(res, 400, -32602, "INVALID_PARAMS", "tools/call requires string name");
+          return;
+        }
+        const args = params.arguments;
+        if (args !== undefined && !isJsonObject(args)) {
+          sendRpcError(res, 400, -32602, "INVALID_PARAMS", "tools/call arguments must be an object");
+          return;
+        }
+        if (!FULL_TOOL_CATALOG.has(name)) {
+          sendRpcError(res, 400, -32602, "INVALID_PARAMS", `Unknown tool: ${name}`);
+          return;
+        }
+      }
+    }
+    // 协议版本协商（§3.6/§3.3）：仅接受三版本表；其他（含 SDK 更新的
+    // 2025-11-25 与未知版本）统一按 2025-06-18 处理，由 SDK 回显该版本
+    if (isJsonObject(body) && body.method === "initialize") {
+      const params = body.params;
+      const pv =
+        isJsonObject(params) && typeof params.protocolVersion === "string"
+          ? params.protocolVersion
+          : undefined;
+      if (pv === undefined || !PROTOCOL_VERSIONS.includes(pv)) {
+        const patched = { ...body } as { params: Record<string, unknown> };
+        patched.params = { ...(params as object), protocolVersion: "2025-06-18" };
+        body = patched;
+      }
+    }
+    const sid = req.header("mcp-session-id");
+    if (!sid) {
+      if (!isInitialize(body)) {
+        sendRpcError(res, 400, -32600, "INVALID_REQUEST", "Missing session: initialize required");
+        return;
+      }
+      if (sessions.size >= MAX_SESSIONS) {
+        sendRpcError(res, 429, -32012, "RATE_LIMITED", "Too many concurrent sessions (max 32)");
+        return;
+      }
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id) => {
+          sessions.set(id, { transport, lastSeen: Date.now(), kind: "streamable" });
+          log.debug("session_created", { sessionId: id, kind: "streamable" });
+        },
+      });
+      transport.onclose = () => {
+        for (const [id, e] of sessions) {
+          if (e.transport === transport) sessions.delete(id);
+        }
+      };
+      const mcp = buildMcpServer(ctx);
+      await mcp.connect(transport);
+      await transport.handleRequest(req, res, body);
+      return;
+    }
+    const entry = sessions.get(sid);
+    if (!entry || entry.kind !== "streamable") {
+      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found");
+      return;
+    }
+    if (!rateAllow(sid)) {
+      sendRpcError(res, 429, -32012, "RATE_LIMITED", "Rate limit exceeded (20 req/s per session)");
+      return;
+    }
+    entry.lastSeen = Date.now();
+    await entry.transport.handleRequest(req, res, body);
+  }));
+
+  app.get("/mcp", (req: Request, res: Response) => {
+    const sid = req.header("mcp-session-id") ?? "";
+    const entry = sessions.get(sid);
+    if (!entry || entry.kind !== "streamable") {
+      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found");
+      return;
+    }
+    entry.lastSeen = Date.now();
+    void entry.transport.handleRequest(req, res).catch(() => {
+      if (!res.headersSent) sendRpcError(res, 500, -32603, "INTERNAL", "GET /mcp failed");
+    });
+  });
+
+  app.delete("/mcp", asyncHandler(async (req: Request, res: Response) => {
+    const sid = req.header("mcp-session-id") ?? "";
+    const entry = sessions.get(sid);
+    if (!entry || entry.kind !== "streamable") {
+      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found");
+      return;
+    }
+    await entry.transport.close();
+    rateBuckets.delete(sid);
+    sessions.delete(sid);
+    res.status(204).end();
+  }));
+
+  // —— 旧版 SSE：/sse + /messages（§3.4）——
+  if (!opts.disableLegacySse) {
+    app.get("/sse", asyncHandler(async (_req: Request, res: Response) => {
+      if (sessions.size >= MAX_SESSIONS) {
+        sendRpcError(res, 429, -32012, "RATE_LIMITED", "Too many concurrent sessions (max 32)");
+        return;
+      }
+      const transport = new SSEServerTransport("/messages", res);
+      sessions.set(transport.sessionId, {
+        transport,
+        lastSeen: Date.now(),
+        kind: "legacy",
+        heartbeat: setInterval(() => {
+          try {
+            res.write(": ping\n\n");
+          } catch {
+            /* 连接已断开 */
+          }
+        }, 15000),
+      });
+      transport.onclose = () => {
+        const e = sessions.get(transport.sessionId);
+        if (e?.kind === "legacy" && e.heartbeat) clearInterval(e.heartbeat);
+        sessions.delete(transport.sessionId);
+      };
+      const mcp = buildMcpServer(ctx);
+      await mcp.connect(transport);
+    }));
+
+    app.post("/messages", asyncHandler(async (req: Request, res: Response) => {
+      const sid = String(req.query.sessionId ?? "");
+      const entry = sessions.get(sid);
+      if (!entry || entry.kind !== "legacy") {
+        res.status(404).end();
+        return;
+      }
+      entry.lastSeen = Date.now();
+      if (!rateAllow(sid)) {
+        sendRpcError(res, 429, -32012, "RATE_LIMITED", "Rate limit exceeded (20 req/s per session)");
+        return;
+      }
+      await entry.transport.handlePostMessage(req, res, req.body);
+    }));
+  }
+
+  app.use((_req: Request, res: Response) => {
+    res.status(404).json({ error: "not_found" });
+  });
+  app.use(errorHandler);
+
+  // —— TTL 清扫（§3.3）——
+  const sweeper = setInterval(() => {
+    const now = Date.now();
+    for (const [id, e] of sessions) {
+      if (now - e.lastSeen > opts.sessionTtlMs) {
+        log.info("session_expired", { sessionId: id, kind: e.kind });
+        if (e.kind === "legacy" && e.heartbeat) clearInterval(e.heartbeat);
+        void e.transport.close().catch(() => {});
+        rateBuckets.delete(id);
+        sessions.delete(id);
+      }
+    }
+  }, opts.sessionSweepMs);
+  sweeper.unref?.();
+
+  // —— 监听：bind 失败 2 秒内 exit 2（§2.3/D10，不换端口不重试）——
+  return new Promise<HttpTransportHandles>((resolve) => {
+    const failTimer = setTimeout(() => {
+      log.error("http_bind_failed", {
+        host: opts.host,
+        port: opts.port,
+        code: "EBINDTIMEOUT",
+        message: "bind did not complete within 2s",
+      });
+      process.exit(2);
+    }, 2000);
+    failTimer.unref?.();
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      clearTimeout(failTimer);
+      log.error("http_bind_failed", {
+        host: opts.host,
+        port: opts.port,
+        code: err.code ?? "EADDRINUSE",
+        message: err.message,
+      });
+      process.exit(2);
+    });
+    server.listen(opts.port, opts.host, () => {
+      clearTimeout(failTimer);
+      const addr = server.address() as { port: number };
+      log.info("http_listening", { host: opts.host, port: addr.port });
+      resolve({
+        app,
+        server,
+        sessionCount: () => sessions.size,
+        close: async () => {
+          clearInterval(sweeper);
+          for (const [, e] of sessions) {
+            if (e.kind === "legacy" && e.heartbeat) clearInterval(e.heartbeat);
+            await e.transport.close().catch(() => {});
+          }
+          sessions.clear();
+          await new Promise<void>((r) => server.close(() => r()));
+        },
+      });
+    });
+  });
+}
+
+function isJsonObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function isInitialize(body: unknown): boolean {
+  return isJsonObject(body) && body.method === "initialize";
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const ha = Buffer.from(a, "utf8");
+  const hb = Buffer.from(b, "utf8");
+  if (ha.length !== hb.length) {
+    timingSafeEqual(ha, ha); // 稳定比较时间
+    return false;
+  }
+  return timingSafeEqual(ha, hb);
+}
+
+export function sendRpcError(
+  res: Response,
+  httpStatus: number,
+  jsonRpcCode: number,
+  errorCode: string,
+  message: string,
+): void {
+  if (res.headersSent) {
+    res.destroy();
+    return;
+  }
+  res.status(httpStatus).json({
+    jsonrpc: "2.0",
+    id: null,
+    error: {
+      code: jsonRpcCode,
+      message,
+      data: { errorCode },
+    },
+  });
+}

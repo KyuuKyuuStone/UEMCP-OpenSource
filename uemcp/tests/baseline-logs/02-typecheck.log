@@ -1,0 +1,30 @@
+$ pnpm -r typecheck
+Scope: 2 of 3 workspace projects
+packages/shared typecheck$ tsc -p tsconfig.json --noEmit
+packages/shared typecheck: Done
+packages/server typecheck$ tsc -p tsconfig.json --noEmit
+packages/server typecheck: src/audit.ts(12,34): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/bridge/client.ts(14,8): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/bridge/discovery.ts(14,42): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/mcp/annotations.ts(4,43): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/mcp/annotations.ts(16,68): error TS2366: Function lacks ending return statement and return type does not include 'undefined'.
+packages/server typecheck: src/policy.ts(4,43): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/policy.ts(14,64): error TS2366: Function lacks ending return statement and return type does not include 'undefined'.
+packages/server typecheck: src/policy.ts(72,4): error TS2366: Function lacks ending return statement and return type does not include 'undefined'.
+packages/server typecheck: src/tools/actorEdit.ts(1,32): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/actorQuery.ts(1,33): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/assetSearch.ts(1,34): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/blueprint.ts(1,63): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/common.ts(13,8): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/consoleCommand.ts(1,37): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/levelControl.ts(1,55): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/materialParams.ts(1,61): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/pythonExec.ts(1,33): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/status.ts(2,29): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/tools/viewportCapture.ts(2,38): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: src/transports/http.ts(20,35): error TS2307: Cannot find module '@uemcp/shared' or its corresponding type declarations.
+packages/server typecheck: Failed
+C:\UE5_P\5.4\UEMCP-OpenSource\uemcp\packages\server:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @uemcp/server@0.1.0 typecheck: `tsc -p tsconfig.json --noEmit`
+Exit status 2
+[ELIFECYCLE] Command failed with exit code 2.

@@ -1,0 +1,45 @@
+$ node --test
+✔ settings: no args and no env → default read-only policy exposes 7 tools (589.149ms)
+✔ settings: UEMCP_POLICY env=standard → 8 tools (env used when no CLI flag) (579.9163ms)
+✔ settings: CLI --policy overrides UEMCP_POLICY env (599.7852ms)
+✔ settings: UEMCP_HTTP_PORT env is honored when --port absent (542.1944ms)
+✔ settings: unknown option --audit-python-source → fatal exit 1 with Unknown option (368.8003ms)
+✔ security: hidden P1 tool direct call → TOOL_DISABLED gate=server.policy (580.4439ms)
+✔ security: read-only narrowing rejects write action at schema layer, read action passes (692.2353ms)
+✔ security: full+allowExec but bridge denies exec → EXEC_DISABLED gate=bridge.allowExec (681.5716ms)
+✔ security: standard + spawn via bridge without --allow-write → PERMISSION_DENIED gate=bridge.allowWrite (661.6722ms)
+✔ security: full + allowed bridge → python eval ok (meta.durationMs) and console stat dispatched (686.9812ms)
+✔ dispatcher: unknown bridge class filter → CLASS_NOT_FOUND with details.className (674.1378ms)
+✔ dispatcher: happy-path RPC round-trip returns ok envelope with data/warnings/meta (682.7787ms)
+✔ dispatcher: bridge maps viewport pie target → PIE_NOT_RUNNING (674.6919ms)
+✔ bridge: dead --bridge-url read tool → BRIDGE_UNAVAILABLE retryable, server stays healthy (593.0049ms)
+✔ bridge: dead --bridge-url write tool → BRIDGE_UNAVAILABLE with explicit not-auto-retried note (593.8287ms)
+✔ bridge: non-JSON 200 response → INTERNAL with bridgeHttpStatus detail (596.5248ms)
+✔ bridge: HTTP 401 → BRIDGE_UNAVAILABLE (retriable) so discovery can re-run (624.3928ms)
+✔ viewport: defaults are target=level_viewport/1280x720/png/camera=current (1.7977ms)
+✔ viewport: explicit camera accepted (location+rotation) (0.6711ms)
+✔ viewport: explicit camera rejects unknown key fov (strict) (0.1787ms)
+✔ viewport: width/height outside 64..7680/64..4320 rejected (0.5788ms)
+✔ viewport: unknown top-level key rejected (strict) (0.1022ms)
+✔ actor.query: defaults scope/fields/limit/offset/sortBy (0.2195ms)
+✔ actor.query: filter strict rejects unknown key (0.1195ms)
+✔ actor.query: limit bounds 1..1000 (0.1013ms)
+✔ actor.query: tags refine caps at 20 properties (0.4038ms)
+✔ level: full action enum and boolean defaults (0.1173ms)
+✔ level: unknown action rejected (0.0844ms)
+✔ level: narrowed schema (read-only) rejects write actions, accepts read actions (0.1585ms)
+✔ level: READ_ONLY_LEVEL_ACTIONS matches policy.ts narrowing and is disjoint from write set (0.0648ms)
+✔ toolNames: full catalog has exactly 10 tools and RPC mapping is total (0.0364ms)
+✔ protocol error table: key mappings per §2.9.2 (0.075ms)
+✔ tool error table: security/bridge codes have documented meta (0.147ms)
+✔ tool error table: TIMEOUT is retired from §2.9.3 (0.0527ms)
+✔ tool error table: bridgeJsonRpc codes are unique and exclude protocol -32001 (0.0957ms)
+✔ toolCodeFromJsonRpc: reverse lookup and unknown code (0.0552ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13528.4868

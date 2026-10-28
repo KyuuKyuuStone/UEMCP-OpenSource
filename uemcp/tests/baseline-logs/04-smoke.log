@@ -1,0 +1,110 @@
+$ node scripts/smoke.mjs
+
+== mock bridge ==
+PASS  mock bridge started + discovery written
+PASS  discovery bridge.json exists
+PASS  bridge /health app=uemcp-bridge
+
+== HTTP server: startup & health ==
+PASS  server /health ok
+PASS  /health bridge.connected=true (discovery + watchdog)
+PASS  /health no token leak
+
+== MCP protocol (PROTO-01/02/17) ==
+PASS  initialize 200 + session header (PROTO-01)
+PASS  initialize protocolVersion negotiated (PROTO-17)
+PASS  serverInfo.name=uemcp
+PASS  initialize 2024-11-05 echo (PROTO-17)
+PASS  initialize future version falls back (PROTO-17)
+PASS  notifications/initialized 202 empty (PROTO-02)
+
+== tools/list: policy matrix (PROTO-03) ==
+PASS  standard = exactly 8 tools
+PASS  standard: ue_editor_status readOnlyHint=true (§5.0.4)
+PASS  standard: ue_level_control readOnlyHint=false
+PASS  standard: no P2 tools
+PASS  every tool has inputSchema
+
+== tools/call success (PROTO-04) ==
+PASS  status call 200, no top-level error
+PASS  isError=false, structuredContent.ok=true
+PASS  data has editor/level/selection/capabilities
+PASS  meta requestId/durationMs/ueVersion
+PASS  data.policies.mode=standard (server-side)
+PASS  content[0].type=text
+
+== protocol-layer errors (PROTO-05/06/10/11/12b/12c) ==
+PASS  invalid JSON → 400 -32700 (PROTO-10)
+PASS  unknown method → 404 -32601 (PROTO-11)
+PASS  arguments array → 400 -32602 INVALID_PARAMS (PROTO-12b)
+PASS  unknown tool → 400 -32602 (PROTO-12c)
+PASS  missing session → 400 (PROTO-05)
+PASS  unknown session → 404 -32001 (PROTO-06)
+
+== tool-layer errors (PROTO-12 / TOOL-05c) ==
+PASS  schema violation → 200 + isError (PROTO-12)
+PASS  error.code=INVALID_ARGUMENT + issues[]
+PASS  content[0].text starts with 'INVALID_ARGUMENT: '
+PASS  CLASS_NOT_FOUND + details.className (TOOL-05c)
+
+== policy matrix: read-only / full (PROTO-03 ①③⑤) ==
+PASS  read-only = exactly 7 tools
+PASS  read-only ue_level_control action enum narrowed
+PASS  read-only ue_material_params action enum narrowed
+PASS  read-only ue_blueprint action enum narrowed
+PASS  read-only mixed tools readOnlyHint=true/destructiveHint=false
+PASS  full + both switches = exactly 10 tools
+PASS  read-only ue_actor_edit → TOOL_DISABLED gate=server.policy (SEC-01b)
+PASS  read-only ue_python_exec → TOOL_DISABLED gate=server.allowExec (SEC-01c)
+PASS  read-only save_current → INVALID_ARGUMENT (SEC-01d)
+
+== P2 tools via bridge (SEC-11 / TOOL-32) ==
+PASS  bridge allowExec=false → EXEC_DISABLED gate=bridge.allowExec (SEC-11)
+PASS  bridge allowConsole=false → PERMISSION_DENIED gate=bridge.allowConsole (SEC-11c)
+PASS  python eval 1+1 → result=2 (TOOL-32)
+PASS  console 'quit' → COMMAND_NOT_ALLOWED (TOOL-31)
+PASS  console 'stat fps' dispatched, outputAvailable=false
+
+== viewport.capture inline & fallback (TOOL-26) ==
+PASS  small PNG → image content block (base64, image/png)
+PASS  small PNG: base64 decodes to non-empty PNG bytes
+PASS  small PNG: data.path returned in structuredContent
+PASS  >8MiB → no image block + warning IMAGE_TOO_LARGE_FOR_INLINE, still ok
+
+== --project discovery (Critical-2) ==
+PASS  --project with trailing slash discovers bridge (normalizeProjectDir)
+PASS  --project case-insensitive match (content compare)
+PASS  --project mismatch → hard fail BRIDGE_UNAVAILABLE, no fallback to bridge.json
+
+== Host/Origin validation (SEC-04/05) ==
+PASS  bad Host → 421 INVALID_REQUEST (SEC-04)
+PASS  bad Origin → 403 (SEC-05)
+
+== rate limit (Major-6 / SEC-14) ==
+PASS  burst > 40 → some 429, protocol-layer shape (no result, -32012 RATE_LIMITED)
+PASS  pre-limit requests still 200
+PASS  recovers after backoff
+
+== DELETE /mcp (PROTO-07) ==
+PASS  DELETE → 204
+PASS  session gone → 404 -32001
+
+== audit log (SEC-12 spot check) ==
+PASS  P2 exec audited with codeSha256, no source text
+PASS  audit has no token
+
+== bridge unavailable (RES-03) ==
+PASS  bridge down → BRIDGE_UNAVAILABLE retryable (RES-03)
+PASS  server still alive after bridge loss
+
+== port conflict exit 2 (RES-06) ==
+PASS  EADDRINUSE → exit code 2
+PASS  stderr has http_bind_failed JSON (§2.3)
+PASS  exit within 2s
+
+== stdio transport (PROTO-16) ==
+PASS  stdio stdout: every line valid JSON-RPC (PROTO-16)
+PASS  stdio tools/list = 8 (standard)
+PASS  stdio stderr has JSON log
+
+========== SMOKE RESULT: 71/71 passed ==========
