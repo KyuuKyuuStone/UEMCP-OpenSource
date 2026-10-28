@@ -5,17 +5,21 @@
  * mock bridge 用 --port 0（随机），与真实服务（18777/18778）、smoke（18999/19001-19008）隔离。
  * 覆盖：settings 加载与默认值（CLI > env > 默认）、策略门控（server.policy /
  *       server.allowExec / bridge.allowExec / bridge.allowWrite / schema 收窄）、
- *       dispatcher 路由与错误码形态、RPC 请求-响应封装、桥接不可达 / 非 JSON / 401 映射。
- * 已知未测：BRIDGE_TIMEOUT（工具最小超时 30s + fetch 余量 5s，测试时长不可接受；
- *           abort < 3s 分支由“bridge unreachable”用例覆盖）。
+ *       dispatcher 路由与错误码形态、RPC 请求-响应封装、桥接不可达 / 非 JSON / 401 映射、
+ *       outputSchema 发布与成功/错误双形态客户端校验（附录 A / 任务 4248c955-A）、
+ *       m-3 超时语义（默认 10s 贯通）、m-13 blueprint query+save 写门与审计、
+ *       BRIDGE_TIMEOUT 分类（挂起桥接，TimeoutError → BRIDGE_TIMEOUT）。
+ * 已知未测：更长超时档位（30s/45s/60s 工具超时与 clamp 120s）——测试时长不可接受，
+ *           BRIDGE_TIMEOUT 用 1s 档（m-3 后用户可调下限 1000ms）验证分类路径。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import http from "node:http";
+import { validate, outputSchemaBranches } from "../scripts/output-schema-validator.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const SERVER = join(ROOT, "packages", "server", "dist", "index.js");
@@ -495,6 +499,232 @@ test("bridge: HTTP 401 → BRIDGE_UNAVAILABLE (retriable) so discovery can re-ru
   } finally {
     await stop(srv.proc);
     fake.close();
+  }
+});
+
+// ---------- outputSchema（附录 A / 任务 4248c955-A）----------
+
+test("outputSchema: every visible tool publishes a dual-shape (success|failure) schema", async () => {
+  const home = newHome();
+  const srv = startServer(["--port", "19150", "--policy", "standard"], serverEnv(home));
+  try {
+    await waitHealth(19150);
+    const sid = await initSession(19150);
+    const res = await fetch(`http://127.0.0.1:19150/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sid },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+    });
+    const text = await res.text();
+    const json = JSON.parse(text.match(/^data: (.*)$/m)?.[1] ?? text);
+    const tools = json.result.tools;
+    assert.equal(tools.length, 8);
+    for (const t of tools) {
+      // MCP 规范/SDK ToolSchema：根层级必须 type:"object"
+      assert.equal(t.outputSchema?.type, "object", `${t.name}: outputSchema root must be type object`);
+      assert.ok(Array.isArray(t.outputSchema.required) && t.outputSchema.required.includes("ok") && t.outputSchema.required.includes("meta"),
+        `${t.name}: root must require ok/meta`);
+      const b = outputSchemaBranches(t);
+      assert.ok(b, `${t.name}: outputSchema must carry a success|failure anyOf union`);
+      assert.ok(b.success.properties.ok.const === true && ["data", "warnings"].every((k) => b.success.required.includes(k)),
+        `${t.name}: success branch must demand ok=true + data + warnings`);
+      assert.ok(b.failure.properties.ok.const === false && b.failure.required.includes("error"),
+        `${t.name}: failure branch must demand ok=false + error`);
+      assert.deepEqual(b.success.not?.required ?? [], ["error"], `${t.name}: success branch must exclude error`);
+      assert.deepEqual(b.failure.not?.required ?? [], ["data"], `${t.name}: failure branch must exclude data`);
+    }
+  } finally {
+    await stop(srv.proc);
+  }
+});
+
+test("outputSchema: success AND error structuredContent pass the published schema for all 10 tools", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home, ["--allow-write", "--allow-exec", "--allow-console"]);
+  const srv = startServer(
+    ["--port", "19151", "--policy", "full", "--allow-console", "--allow-exec", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home),
+  );
+  try {
+    await waitHealth(19151);
+    const sid = await initSession(19151);
+    const lres = await fetch(`http://127.0.0.1:19151/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sid },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+    });
+    const ltext = await lres.text();
+    const ljson = JSON.parse(ltext.match(/^data: (.*)$/m)?.[1] ?? ltext);
+    const tools = ljson.result.tools;
+    assert.equal(tools.length, 10, "full+switches exposes the full catalog");
+    const schemas = new Map(tools.map((t) => [t.name, t.outputSchema]));
+
+    const successes = [
+      ["ue_editor_status", {}],
+      ["ue_actor_query", { filter: { class: "StaticMeshActor" } }],
+      ["ue_asset_search", { query: "M_Test" }],
+      ["ue_actor_edit", { operations: [{ op: "spawn", class: "Cube" }] }],
+      ["ue_level_control", { action: "get_current" }],
+      ["ue_material_params", { action: "list", materialPath: "/Game/Materials/M_Test" }],
+      ["ue_viewport_capture", { returnMode: "file" }],
+      ["ue_console_command", { command: "stat fps" }],
+      ["ue_python_exec", { code: "1+1", mode: "eval" }],
+      ["ue_blueprint", { action: "query", blueprintPath: "/Game/BP_Test" }],
+    ];
+    for (const [i, [name, args]] of successes.entries()) {
+      const r = await rpc(19151, sid, name, args, 100 + i);
+      assert.equal(r.http, 200, `${name} http`);
+      assert.equal(r.body.result.isError, false, `${name} expected success`);
+      const sc = SC(r);
+      const v = validate(schemas.get(name), sc);
+      assert.equal(v.valid, true, `${name} success structuredContent must match its outputSchema: ${v.errors.join("; ")}`);
+    }
+
+    const failures = [
+      ["ue_level_control", { action: "definitely_not_an_action" }, "INVALID_ARGUMENT"],
+      ["ue_actor_query", { filter: { class: "FooBar" } }, "CLASS_NOT_FOUND"],
+      ["ue_console_command", { command: "quit" }, "COMMAND_NOT_ALLOWED"],
+    ];
+    for (const [i, [name, args, code]] of failures.entries()) {
+      const r = await rpc(19151, sid, name, args, 200 + i);
+      assert.equal(r.http, 200, `${name} tool-layer error must be HTTP 200`);
+      assert.equal(r.body.result.isError, true, `${name} expected isError=true`);
+      const sc = SC(r);
+      assert.equal(sc.error.code, code, `${name} error code`);
+      const v = validate(schemas.get(name), sc);
+      assert.equal(v.valid, true, `${name} error structuredContent must match the failure branch of its outputSchema: ${v.errors.join("; ")}`);
+    }
+  } finally {
+    await stop(srv.proc);
+    bridge.proc.kill();
+  }
+});
+
+// ---------- m-13：blueprint query+save 计入写操作 ----------
+
+test("m-13: read-only ue_blueprint {action:query, save:true} → PERMISSION_DENIED (write to disk blocked)", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home);
+  const srv = startServer(
+    ["--port", "19152", "--policy", "read-only", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home),
+  );
+  try {
+    await waitHealth(19152);
+    const sid = await initSession(19152);
+    const lres = await fetch(`http://127.0.0.1:19152/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sid },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+    });
+    const ltext = await lres.text();
+    const ljson = JSON.parse(ltext.match(/^data: (.*)$/m)?.[1] ?? ltext);
+    const bp = ljson.result.tools.find((t) => t.name === "ue_blueprint");
+    const bpSchema = bp.outputSchema;
+
+    const denied = await rpc(19152, sid, "ue_blueprint", { action: "query", save: true }, 3);
+    assert.equal(denied.body.result.isError, true);
+    assert.equal(SC(denied).error.code, "PERMISSION_DENIED", "save:true is a disk write and must be denied under read-only");
+    assert.equal(SC(denied).error.details?.gate, "server.policy");
+    const dv = validate(bpSchema, SC(denied));
+    assert.equal(dv.valid, true, `failure shape must match outputSchema: ${dv.errors.join("; ")}`);
+
+    const plain = await rpc(19152, sid, "ue_blueprint", { action: "query" }, 4);
+    assert.equal(plain.body.result.isError, false, "plain query without save stays read-only-allowed");
+    const pv = validate(bpSchema, SC(plain));
+    assert.equal(pv.valid, true, `success shape must match outputSchema: ${pv.errors.join("; ")}`);
+  } finally {
+    await stop(srv.proc);
+    bridge.proc.kill();
+  }
+});
+
+test("m-13: standard ue_blueprint {action:query, save:true} → audited as write, plain query not audited", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home, ["--allow-write"]);
+  const srv = startServer(
+    ["--port", "19153", "--policy", "standard", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home),
+  );
+  try {
+    await waitHealth(19153);
+    const sid = await initSession(19153);
+    const plain = await rpc(19153, sid, "ue_blueprint", { action: "query" }, 3);
+    assert.equal(plain.body.result.isError, false);
+    const saved = await rpc(19153, sid, "ue_blueprint", { action: "query", save: true }, 4);
+    assert.equal(saved.body.result.isError, false, "standard mode allows the disk write");
+    await new Promise((r) => setTimeout(r, 300));
+    const auditDir = join(home, "audit");
+    let lines = "";
+    if (existsSync(auditDir)) {
+      for (const f of readdirSync(auditDir)) lines += readFileSync(join(auditDir, f), "utf8");
+    }
+    const bpRecords = lines.split("\n").flatMap((l) => {
+      try { const j = JSON.parse(l); return j.tool === "ue_blueprint" ? [j] : []; } catch { return []; }
+    });
+    assert.equal(bpRecords.length, 1, "exactly the save:true call must be audited (plain query stays unaudited)");
+    assert.equal(bpRecords[0].argsSummary?.save, true);
+    assert.equal(bpRecords[0].decision, "allowed");
+    assert.equal(bpRecords[0].ok, true);
+  } finally {
+    await stop(srv.proc);
+    bridge.proc.kill();
+  }
+});
+
+// ---------- m-3：pythonExec 超时语义贯通（schema 默认 10s，用户可调） ----------
+
+test("m-3: ue_python_exec timeoutMs semantics flow to the bridge (default 10000, explicit 5000 honored)", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home, ["--allow-write", "--allow-exec", "--allow-console"]);
+  const srv = startServer(
+    ["--port", "19154", "--policy", "full", "--allow-exec", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home),
+  );
+  try {
+    await waitHealth(19154);
+    const sid = await initSession(19154);
+    const omitted = await rpc(19154, sid, "ue_python_exec", { code: "1+1", mode: "eval" }, 3);
+    assert.equal(omitted.body.result.isError, false);
+    assert.equal(SC(omitted).data.timeoutMsReceived, 10000, "omitted timeoutMs must use the §5.9 schema default 10000, not a server-side 30s floor");
+    const explicit = await rpc(19154, sid, "ue_python_exec", { code: "1+1", mode: "eval", timeoutMs: 5000 }, 4);
+    assert.equal(SC(explicit).data.timeoutMsReceived, 5000, "user-set 5s must not be raised to 30s anymore (m-3)");
+  } finally {
+    await stop(srv.proc);
+    bridge.proc.kill();
+  }
+});
+
+// ---------- m-2 / BRIDGE_TIMEOUT：挂起桥接的 abort 分类 ----------
+
+test("bridge: hung /rpc with timeoutMs=1000 → BRIDGE_TIMEOUT phase=game_thread (abort classification)", async () => {
+  const home = newHome();
+  const fake = http.createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/health") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ app: "uemcp-bridge", ok: true, pid: process.pid, startedAt: new Date().toISOString() }));
+      return;
+    }
+    // /rpc：接受连接但永不响应 → 客户端 AbortSignal.timeout(timeoutMs+5s) 触发 TimeoutError
+  });
+  await new Promise((r) => fake.listen(19158, "127.0.0.1", r));
+  const srv = startServer(
+    ["--port", "19159", "--policy", "full", "--allow-exec", "--bridge-url", "http://127.0.0.1:19158"],
+    serverEnv(home),
+  );
+  try {
+    await waitHealth(19159);
+    const sid = await initSession(19159);
+    const r = await rpc(19159, sid, "ue_python_exec", { code: "pass", mode: "exec", timeoutMs: 1000 }, 3);
+    assert.equal(r.http, 200);
+    assert.equal(SC(r).error.code, "BRIDGE_TIMEOUT", "TimeoutError must classify as BRIDGE_TIMEOUT, not BRIDGE_UNAVAILABLE");
+    assert.equal(SC(r).error.retryable, true);
+    assert.equal(SC(r).error.details?.phase, "game_thread");
+    assert.equal(SC(r).error.details?.timeoutMs, 1000);
+  } finally {
+    await stop(srv.proc);
+    fake.close();
+    fake.closeAllConnections?.(); // 挂起的 /rpc 连接会让 close 回调挂起，直接断开
   }
 });
 

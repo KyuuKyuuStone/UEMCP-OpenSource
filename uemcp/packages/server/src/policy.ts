@@ -2,6 +2,11 @@
  * 策略矩阵（§5.0.3 / §5.11 / §6.3）。
  */
 import type { PolicyMode, ToolName } from "@uemcp/shared";
+import {
+  READ_ONLY_BLUEPRINT_ACTIONS,
+  READ_ONLY_LEVEL_ACTIONS,
+  READ_ONLY_MATERIAL_ACTIONS,
+} from "@uemcp/shared";
 
 export interface PolicyState {
   mode: PolicyMode;
@@ -31,7 +36,9 @@ export function isToolVisible(tool: ToolName, p: PolicyState): boolean {
   }
 }
 
-/** read-only 下混合工具收窄的 action enum（§5.11） */
+/** read-only 下混合工具收窄的 action enum（§5.11）
+ *  单一来源：直接引用 shared 的 READ_ONLY_* 常量（Major-5 白名单单一来源口径），
+ *  与 levelInputSchema/materialInputSchema/blueprintInputSchema 的收窄枚举同源。 */
 export function narrowedActions(
   tool: ToolName,
   p: PolicyState,
@@ -39,20 +46,18 @@ export function narrowedActions(
   if (p.mode !== "read-only") return undefined;
   switch (tool) {
     case "ue_level_control":
-      return ["get_current", "list_dirty"];
+      return READ_ONLY_LEVEL_ACTIONS;
     case "ue_material_params":
-      return ["list", "get"];
+      return READ_ONLY_MATERIAL_ACTIONS;
     case "ue_blueprint":
-      return ["query"];
+      return READ_ONLY_BLUEPRINT_ACTIONS;
     default:
       return undefined;
   }
 }
 
-/**
- * 未注册工具被直接调用时的 gate 来源（§2.9.6 TOOL_DISABLED gate）。
- * P2 工具的 gate 固定为对应开关（SEC-01(c)/SEC-15）；P1 为 server.policy。
- */
+/** 未注册工具被直接调用时的 gate 来源（§2.9.6 TOOL_DISABLED gate）。
+ *  P2 工具的 gate 固定为对应开关（SEC-01(c)/SEC-15）；P1 为 server.policy。 */
 export function toolDisabledGate(tool: ToolName, p: PolicyState): string {
   switch (tool) {
     case "ue_console_command":
@@ -62,46 +67,5 @@ export function toolDisabledGate(tool: ToolName, p: PolicyState): string {
     default:
       void p;
       return "server.policy";
-  }
-}
-
-/** §5.0.4 工具注解（随策略变化） */
-export function toolAnnotations(
-  tool: ToolName,
-  p: PolicyState,
-): {
-  readOnlyHint: boolean;
-  destructiveHint: boolean;
-  idempotentHint: boolean;
-  openWorldHint: boolean;
-} {
-  const readOnlyMode = p.mode === "read-only";
-  switch (tool) {
-    case "ue_editor_status":
-      return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-    case "ue_actor_query":
-      return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-    case "ue_asset_search":
-      return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-    case "ue_viewport_capture":
-      return { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false };
-    case "ue_actor_edit":
-      return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
-    case "ue_console_command":
-      return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
-    case "ue_python_exec":
-      return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
-    case "ue_level_control":
-      return readOnlyMode
-        ? { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false }
-        : { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
-    case "ue_material_params":
-      return readOnlyMode
-        ? { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false }
-        : { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
-    case "ue_blueprint":
-      return readOnlyMode
-        ? { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false }
-        : { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
   }
 }

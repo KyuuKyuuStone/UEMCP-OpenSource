@@ -5,17 +5,21 @@
  * tools/call 正常与错误路径（PROTO-04/10/11/12/12b/12c、SEC-01、TOOL-05(c)）
  * 桥接不可达 BRIDGE_UNAVAILABLE（RES-03）/ 端口占用 exit 2（RES-06）/ stdio（PROTO-16）
  * Host/Origin 校验（SEC-04/05）、DELETE 会话（PROTO-07）、审计（SEC-12 红线抽查）
+ * 临时 HOME 清理（DEF-2）：默认 try/finally 删除本次 uemcp-smoke-* 目录（含失败/崩溃
+ * 路径，先兜底回收全部子进程）；--keep-artifacts 或 UEMCP_KEEP_ARTIFACTS=1 保留现场。
  */
 import { spawn } from "node:child_process";
 import { request as httpRequest } from "node:http";
-import { mkdtempSync, readdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { validate, outputSchemaBranches } from "./output-schema-validator.mjs";
 
 const SERVER = new URL("../packages/server/dist/index.js", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const MOCK = new URL("./mock-bridge.mjs", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
 const results = [];
+const smokeChildren = new Set(); // 本次 smoke 启动的全部子进程（DEF-2：finally 兜底回收）
 let current = "";
 function check(name, cond, detail = "") {
   results.push({ name, pass: cond === true, detail });
@@ -85,10 +89,12 @@ async function waitHealth(port, timeoutMs = 10000) {
 }
 
 function spawnServer(args, env) {
-  return spawn(process.execPath, [SERVER, ...args], {
+  const child = spawn(process.execPath, [SERVER, ...args], {
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
   });
+  smokeChildren.add(child);
+  return child;
 }
 
 function collectStderr(child) {
@@ -98,7 +104,44 @@ function collectStderr(child) {
 }
 
 async function main() {
+  // DEF-2：默认清理本次临时 HOME（try/finally 兜底失败/崩溃路径）；
+  // --keep-artifacts（argv）或 UEMCP_KEEP_ARTIFACTS=1 保留现场供排查。
+  const keepArtifacts = process.argv.includes("--keep-artifacts") || process.env.UEMCP_KEEP_ARTIFACTS === "1";
   const home = mkdtempSync(join(tmpdir(), "uemcp-smoke-"));
+  try {
+    await runSuite(home);
+  } finally {
+    // 兜底回收子进程（正常路径多数已退出；崩溃/超时路径必须回收才能安全删目录）
+    for (const c of smokeChildren) {
+      try { c.kill(); } catch { /* already gone */ }
+    }
+    await sleep(600); // 等句柄释放（Windows 上立即删目录可能 EBUSY）
+    for (const c of smokeChildren) {
+      try { c.kill("SIGKILL"); } catch { /* already gone */ }
+    }
+    if (keepArtifacts) {
+      console.log(`\nINFO  --keep-artifacts: temp HOME preserved for inspection: ${home}`);
+    } else {
+      let cleaned = false;
+      try {
+        rmSync(home, { recursive: true, force: true });
+        cleaned = !existsSync(home);
+      } catch (e) {
+        console.error(`WARN  temp HOME cleanup failed: ${String(e)}`);
+      }
+      check("temp HOME cleaned up after run (DEF-2, no uemcp-smoke-* leak)", cleaned, home);
+    }
+  }
+  const failed = results.filter((r) => !r.pass);
+  console.log(`\n========== SMOKE RESULT: ${results.length - failed.length}/${results.length} passed ==========`);
+  if (failed.length) {
+    console.log("FAILED:");
+    for (const f of failed) console.log(`  - ${f.name}: ${f.detail}`);
+    process.exitCode = 1;
+  }
+}
+
+async function runSuite(home) {
   // 隔离默认桥接端口：避免本机真实 UEMCPBridge（18778）影响"全部发现来源失败"类断言
   const env = { USERPROFILE: home, UEMCP_AUDIT_DIR: join(home, "audit"), UEMCP_BRIDGE_PORT: "18999" };
 
@@ -108,6 +151,7 @@ async function main() {
   const bridge = spawn(process.execPath, [MOCK, "--port", "0", "--home", home], {
     stdio: ["ignore", "pipe", "pipe"],
   });
+  smokeChildren.add(bridge);
   bridge.stdout.on("data", (c) => bridgeStdout.push(c.toString()));
   let bridgeInfo;
   for (let i = 0; i < 50 && !bridgeInfo; i++) {
@@ -188,6 +232,11 @@ async function main() {
   check("standard: ue_level_control readOnlyHint=false", stdTool("ue_level_control").annotations?.readOnlyHint === false);
   check("standard: no P2 tools", !namesStd.includes("ue_console_command") && !namesStd.includes("ue_python_exec"));
   check("every tool has inputSchema", listStd.json.result.tools.every((t) => t.inputSchema && t.inputSchema.type === "object"));
+  check(
+    "every tool has dual-shape outputSchema (success|failure union, 附录 A / 4248c955-A)",
+    listStd.json.result.tools.every((t) => outputSchemaBranches(t) !== null),
+  );
+  const stOut = listStd.json.result.tools.find((t) => t.name === "ue_editor_status").outputSchema;
 
   // ---- tools/call success ----
   section("tools/call success (PROTO-04)");
@@ -198,6 +247,10 @@ async function main() {
   check("data has editor/level/selection/capabilities", ["editor", "level", "selection", "capabilities"].every((k) => k in (sc.structuredContent.data ?? {})), JSON.stringify(Object.keys(sc.structuredContent?.data ?? {})));
   check("meta requestId/durationMs/ueVersion", !!sc.structuredContent?.meta?.requestId && typeof sc.structuredContent?.meta?.durationMs === "number" && sc.structuredContent?.meta?.ueVersion === "5.4.4");
   check("data.policies.mode=standard (server-side)", sc.structuredContent.data.policies?.mode === "standard");
+  {
+    const v = validate(stOut, sc.structuredContent);
+    check("status structuredContent validates against outputSchema (client-side)", v.valid, v.errors.join("; "));
+  }
   check("content[0].type=text", sc.content?.[0]?.type === "text");
 
   // ---- protocol-layer errors ----
@@ -222,6 +275,10 @@ async function main() {
   check("schema violation → 200 + isError (PROTO-12)", badEnum.status === 200 && badEnum.json?.error === undefined && be?.isError === true && be?.structuredContent?.ok === false);
   check("error.code=INVALID_ARGUMENT + issues[]", be?.structuredContent?.error?.code === "INVALID_ARGUMENT" && Array.isArray(be?.structuredContent?.error?.details?.issues) && be.structuredContent.error.details.issues.length > 0);
   check("content[0].text starts with 'INVALID_ARGUMENT: '", String(be?.content?.[0]?.text).startsWith("INVALID_ARGUMENT: "));
+  {
+    const v = validate(stOut, be?.structuredContent);
+    check("INVALID_ARGUMENT structuredContent validates against outputSchema failure branch", v.valid, v.errors.join("; "));
+  }
 
   const classNf = await rpc(PORT, { jsonrpc: "2.0", id: 10, method: "tools/call", params: { name: "ue_actor_query", arguments: { scope: "level", filter: { class: "NoSuchClassXYZ" } } } }, { headers: H });
   const cn = classNf.json?.result;
@@ -253,6 +310,7 @@ async function main() {
   const roBp = ro.tools.find((t) => t.name === "ue_blueprint");
   check("read-only ue_blueprint action enum narrowed", JSON.stringify(roBp.inputSchema.properties.action.enum) === JSON.stringify(["query"]));
   check("read-only mixed tools readOnlyHint=true/destructiveHint=false", ["ue_level_control", "ue_material_params", "ue_blueprint"].every((n) => ro.tools.find((t) => t.name === n).annotations.readOnlyHint === true && ro.tools.find((t) => t.name === n).annotations.destructiveHint === false));
+  check("read-only every tool has dual-shape outputSchema", ro.tools.every((t) => outputSchemaBranches(t) !== null));
 
   const full = await toolNames(PORT3);
   const fullNames = full.tools.map((t) => t.name).sort();
@@ -268,6 +326,10 @@ async function main() {
   const roSave = await rpc(PORT2, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "ue_level_control", arguments: { action: "save_current" } } }, { headers: { "Mcp-Session-Id": ro.sid } });
   const ros = roSave.json?.result;
   check("read-only save_current → INVALID_ARGUMENT (SEC-01d)", roSave.status === 200 && ros?.structuredContent?.error?.code === "INVALID_ARGUMENT");
+  {
+    const v = validate(ro.tools.find((t) => t.name === "ue_level_control").outputSchema, ros?.structuredContent);
+    check("read-only INVALID_ARGUMENT error validates against failure branch", v.valid, v.errors.join("; "));
+  }
 
   // ---- P2 exec path with mock bridge (deny-exec default) ----
   section("P2 tools via bridge (SEC-11 / TOOL-32)");
@@ -282,6 +344,7 @@ async function main() {
   const PORT4 = 19004;
   const bridge2Out = [];
   const bridge2 = spawn(process.execPath, [MOCK, "--port", "0", "--home", home, "--allow-write", "--allow-exec", "--allow-console"], { stdio: ["ignore", "pipe", "pipe"] });
+  smokeChildren.add(bridge2);
   bridge2.stdout.on("data", (c) => bridge2Out.push(c.toString()));
   let bridge2Info;
   for (let i = 0; i < 50 && !bridge2Info; i++) {
@@ -297,8 +360,17 @@ async function main() {
   const H5 = { "Mcp-Session-Id": i5.sid };
   const execOk = await rpc(PORT5, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "ue_python_exec", arguments: { code: "1+1", mode: "eval" } } }, { headers: H5 });
   check("python eval 1+1 → result=2 (TOOL-32)", execOk.json?.result?.structuredContent?.data?.result === 2 && execOk.json?.result?.isError !== true);
+  check("python exec: timeoutMsReceived=10000 (m-3 schema default flows through)", execOk.json?.result?.structuredContent?.data?.timeoutMsReceived === 10000, JSON.stringify(execOk.json?.result?.structuredContent?.data));
+  {
+    const v = validate(full.tools.find((t) => t.name === "ue_python_exec").outputSchema, execOk.json?.result?.structuredContent);
+    check("python exec structuredContent validates against outputSchema success branch", v.valid, v.errors.join("; "));
+  }
   const cmdDenied = await rpc(PORT5, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "ue_console_command", arguments: { command: "quit" } } }, { headers: H5 });
   check("console 'quit' → COMMAND_NOT_ALLOWED (TOOL-31)", cmdDenied.json?.result?.structuredContent?.error?.code === "COMMAND_NOT_ALLOWED");
+  {
+    const v = validate(full.tools.find((t) => t.name === "ue_console_command").outputSchema, cmdDenied.json?.result?.structuredContent);
+    check("COMMAND_NOT_ALLOWED error validates against failure branch", v.valid, v.errors.join("; "));
+  }
   const cmdOk = await rpc(PORT5, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "ue_console_command", arguments: { command: "stat fps" } } }, { headers: H5 });
   const cdo = cmdOk.json?.result;
   check("console 'stat fps' dispatched, outputAvailable=false", cdo?.structuredContent?.data?.dispatched === true && cdo?.structuredContent?.data?.outputAvailable === false);
@@ -329,7 +401,7 @@ async function main() {
   // ---- --project discovery（Critical-2）----
   section("--project discovery (Critical-2)");
   const PORT6 = 19006, PORT7 = 19007, PORT8 = 19008;
-  const PROJ = "C:/UE5_P/5.4/XQHCPP_54"; // mock bridge 写发现文件用的 projectDir
+  const PROJ = "UEMCP-TestProject"; // mock bridge 写发现文件用的 projectDir
   const projectServers = [];
   async function probeProject(port, projectDir) {
     const s = spawnServer(["--transport", "http", "--port", String(port), "--policy", "standard", "--project", projectDir], env);
@@ -440,6 +512,10 @@ async function main() {
   const unavailable = await rpc(PORT5, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "ue_editor_status", arguments: {} } }, { headers: H5 });
   const un = unavailable.json?.result;
   check("bridge down → BRIDGE_UNAVAILABLE retryable (RES-03)", unavailable.status === 200 && un?.isError === true && un?.structuredContent?.error?.code === "BRIDGE_UNAVAILABLE" && un?.structuredContent?.error?.retryable === true, unavailable.text.slice(0, 200));
+  {
+    const v = validate(stOut, un?.structuredContent);
+    check("BRIDGE_UNAVAILABLE error validates against failure branch", v.valid, v.errors.join("; "));
+  }
   const healthAlive = await fetch(`http://127.0.0.1:${PORT5}/health`);
   check("server still alive after bridge loss", healthAlive.status === 200 && (await healthAlive.json()).ok === true);
 
@@ -495,15 +571,8 @@ async function main() {
   for (const s of [srv, srv2, srv3, srv5]) {
     s.stdout?.removeAllListeners?.();
   }
-
-  const failed = results.filter((r) => !r.pass);
-  console.log(`\n========== SMOKE RESULT: ${results.length - failed.length}/${results.length} passed ==========`);
-  if (failed.length) {
-    console.log("FAILED:");
-    for (const f of failed) console.log(`  - ${f.name}: ${f.detail}`);
-    process.exit(1);
-  }
 }
+// 临时 HOME 的最终删除与结果汇总在 main() 的 finally 之后（DEF-2）。
 
 main().catch((e) => {
   console.error("SMOKE CRASH:", e);

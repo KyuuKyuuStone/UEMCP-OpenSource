@@ -14,6 +14,8 @@ import {
   levelInputSchema,
   LEVEL_ACTIONS,
   READ_ONLY_LEVEL_ACTIONS,
+  READ_ONLY_MATERIAL_ACTIONS,
+  READ_ONLY_BLUEPRINT_ACTIONS,
   LEVEL_WRITE_ACTIONS,
   TOOL_NAMES,
   FULL_TOOL_CATALOG,
@@ -22,6 +24,8 @@ import {
   TOOL_ERROR_TABLE,
   isToolErrorCode,
   toolCodeFromJsonRpc,
+  PythonExecInput,
+  TOOL_OUTPUT_SCHEMAS,
 } from "../packages/shared/dist/index.js";
 
 // ---------- ue_viewport_capture schema ----------
@@ -188,4 +192,88 @@ test("toolCodeFromJsonRpc: reverse lookup and unknown code", () => {
   assert.equal(toolCodeFromJsonRpc(-32000), "BRIDGE_UNAVAILABLE");
   assert.equal(toolCodeFromJsonRpc(-32004), "TOOL_DISABLED");
   assert.equal(toolCodeFromJsonRpc(-32001), undefined);
+});
+
+// ---------- python schema 默认值（m-3，§5.9）----------
+
+test("python: timeoutMs defaults to 10000 per §5.9 (m-3: server must not raise it to 30s)", () => {
+  const r = PythonExecInput.parse({ code: "pass" });
+  assert.equal(r.timeoutMs, 10000);
+  assert.equal(PythonExecInput.safeParse({ code: "pass", timeoutMs: 1000 }).success, true, "user-set 1s must be accepted by schema");
+  assert.equal(PythonExecInput.safeParse({ code: "pass", timeoutMs: 999 }).success, false);
+  assert.equal(PythonExecInput.safeParse({ code: "pass", timeoutMs: 120001 }).success, false);
+});
+
+// ---------- outputSchema 目录（任务 4248c955-A，附录 A）----------
+
+const OK_META = { requestId: "req_test", durationMs: 1 };
+
+/** 每个工具最小合法成功 data（status 需要 Server 注入的 policies） */
+const MIN_OK_DATA = {
+  ue_editor_status: { policies: { mode: "read-only", write: false, exec: false, destructive: false } },
+};
+
+test("outputs: TOOL_OUTPUT_SCHEMAS covers exactly the 10-tool catalog", () => {
+  assert.equal(new Set(Object.keys(TOOL_OUTPUT_SCHEMAS)).size, 10);
+  for (const t of TOOL_NAMES) {
+    assert.ok(TOOL_OUTPUT_SCHEMAS[t], `${t} must have an output schema`);
+  }
+});
+
+test("outputs: every schema accepts success and failure structuredContent, rejects bare envelope", () => {
+  for (const name of TOOL_NAMES) {
+    const s = TOOL_OUTPUT_SCHEMAS[name];
+    const okSC = {
+      ok: true,
+      data: MIN_OK_DATA[name] ?? {},
+      warnings: [],
+      meta: { ...OK_META },
+    };
+    assert.equal(s.safeParse(okSC).success, true, `${name} success shape must parse`);
+    assert.equal(
+      s.safeParse({ ...okSC, meta: { ...OK_META, ueVersion: "5.4.4", pluginVersion: "0.1.0" } }).success,
+      true,
+      `${name} meta ueVersion/pluginVersion optional must parse`,
+    );
+    const errSC = {
+      ok: false,
+      error: { code: "BRIDGE_TIMEOUT", message: "timed out", retryable: true, details: { phase: "game_thread" } },
+      meta: { ...OK_META },
+    };
+    assert.equal(s.safeParse(errSC).success, true, `${name} failure shape must parse (isError=true results are validated too)`);
+    // 封套强约束：缺 data/缺 error/缺 meta/未知错误码都要打回
+    assert.equal(s.safeParse({ ok: true, warnings: [], meta: OK_META }).success, false, `${name} success without data must fail`);
+    assert.equal(s.safeParse({ ok: false, meta: OK_META }).success, false, `${name} failure without error must fail`);
+    assert.equal(s.safeParse({ ok: true, data: {}, meta: OK_META }).success, false, `${name} success without warnings must fail`);
+    assert.equal(
+      s.safeParse({ ok: false, error: { code: "NOT_A_REAL_CODE", message: "x", retryable: false }, meta: OK_META }).success,
+      false,
+      `${name} unknown error code must fail`,
+    );
+  }
+});
+
+test("outputs: schema rejects extra envelope keys and non-string warnings (strict envelope)", () => {
+  const s = TOOL_OUTPUT_SCHEMAS.ue_actor_query;
+  assert.equal(
+    s.safeParse({ ok: true, data: {}, warnings: [], meta: OK_META, extra: 1 }).success,
+    false,
+    "extra top-level key must fail",
+  );
+  assert.equal(
+    s.safeParse({ ok: true, data: {}, warnings: [1], meta: OK_META }).success,
+    false,
+    "warnings must be string[]",
+  );
+  assert.equal(
+    s.safeParse({ ok: false, error: { code: "INTERNAL", message: "x", retryable: false }, meta: { ...OK_META, requestId: 42 } }).success,
+    false,
+    "meta.requestId must be string",
+  );
+});
+
+test("outputs: READ_ONLY_* action constants exist for the three mixed tools (narrowing single source)", () => {
+  assert.deepEqual([...READ_ONLY_LEVEL_ACTIONS].sort(), ["get_current", "list_dirty"]);
+  assert.deepEqual([...READ_ONLY_MATERIAL_ACTIONS].sort(), ["get", "list"]);
+  assert.deepEqual([...READ_ONLY_BLUEPRINT_ACTIONS].sort(), ["query"]);
 });

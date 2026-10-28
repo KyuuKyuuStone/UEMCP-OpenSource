@@ -34,7 +34,13 @@ export const blueprintTool: ToolDef = {
       return errResult(invalidArgument(parsed.error), makeMeta(ctx, started));
     }
     const args = parsed.data as BlueprintArgs;
-    const isWrite = BLUEPRINT_WRITE_ACTIONS.has(args.action);
+    // m-13（审查报告）：query + save:true 会写盘（保存蓝图包），必须计入写操作——
+    // 否则 read-only 下静默写盘、standard/full 下不审计且可自动重试。
+    // BLUEPRINT_WRITE_ACTIONS（action 维度，与 Bridge 端 WRITE_ACTIONS={compile} 同口径）
+    // 保持不变；此处补上参数维度的 save===true。
+    const isWrite =
+      BLUEPRINT_WRITE_ACTIONS.has(args.action) ||
+      (args.action === "query" && args.save === true);
 
     if (ctx.policy.mode === "read-only" && isWrite) {
       return errResult(

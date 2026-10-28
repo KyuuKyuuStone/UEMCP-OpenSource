@@ -18,6 +18,7 @@ import {
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { isToolVisible } from "../policy.js";
 import { toolAnnotations } from "./annotations.js";
+import { toolOutputJsonSchema } from "./outputSchema.js";
 import { ALL_TOOLS } from "../tools/index.js";
 import type { ToolContext } from "../tools/common.js";
 
@@ -26,7 +27,10 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     const inputSchema = zodToJsonSchema(def.schemaFor(ctx.policy), {
       $refStrategy: "none",
     }) as Record<string, unknown>;
-    return { def, inputSchema };
+    // 附录 A：根层级 type:"object" + 成功/失败双形态 anyOf（§5.0.1）。
+    // 客户端（SDK Ajv）对存在的 structuredContent 一律校验，含 isError=true 的结果。
+    const outputSchema = toolOutputJsonSchema(def.name);
+    return { def, inputSchema, outputSchema };
   });
   const byName = new Map<string, (typeof defs)[number]>(
     defs.map((e) => [e.def.name as string, e]),
@@ -56,11 +60,12 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
   server.server.setRequestHandler(ListToolsRequestSchema, async () => {
     const visible = defs.filter((e) => isToolVisible(e.def.name, ctx.policy));
     return {
-      tools: visible.map(({ def, inputSchema }) => ({
+      tools: visible.map(({ def, inputSchema, outputSchema }) => ({
         name: def.name,
         title: def.title,
         description: def.description,
         inputSchema: inputSchema as never,
+        outputSchema: outputSchema as never,
         annotations: {
           ...toolAnnotations(def.name, ctx.policy.mode),
           title: def.title,

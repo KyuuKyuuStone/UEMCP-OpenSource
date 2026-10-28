@@ -28,7 +28,7 @@ for (let i = 2; i < process.argv.length; i++) {
 
 const portArg = Number(args.get("--port") ?? 0);
 const home = args.get("--home") ?? process.env.USERPROFILE ?? process.env.HOME ?? ".";
-const projectDir = (args.get("--project") ?? "C:/UE5_P/5.4/XQHCPP_54").replaceAll("\\", "/");
+const projectDir = (args.get("--project") ?? "UEMCP-TestProject").replaceAll("\\", "/");
 const token = randomBytes(32).toString("base64url");
 const startedAt = new Date().toISOString();
 const flags = {
@@ -65,7 +65,7 @@ function rpcErr(id, rpcCode, errorCode, message, details, retryable = false) {
   };
 }
 
-function dispatch(method, params) {
+function dispatch(method, params, meta = {}) {
   switch (method) {
     case "bridge.ping":
     case "bridge.capabilities":
@@ -246,8 +246,8 @@ function dispatch(method, params) {
       if (flags.failPython)
         return { __err: rpcErrTemplate("PYTHON_ERROR", -32014, "Traceback (most recent call last):\n  ValueError: uemcp-test") };
       if (params.mode === "eval" && params.code === "1+1")
-        return ok({ mode: "eval", result: 2, stdout: "", stderr: "", durationMs: 1, timedOut: false });
-      return ok({ mode: params.mode ?? "exec", result: null, stdout: "", stderr: "", durationMs: 1, timedOut: false });
+        return ok({ mode: "eval", result: 2, stdout: "", stderr: "", durationMs: 1, timedOut: false, timeoutMsReceived: meta.timeoutMs });
+      return ok({ mode: params.mode ?? "exec", result: null, stdout: "", stderr: "", durationMs: 1, timedOut: false, timeoutMsReceived: meta.timeoutMs });
     }
     case "blueprint.query": {
       const action = params.action;
@@ -340,7 +340,7 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON", data: { errorCode: "PARSE_ERROR" } } }));
         return;
       }
-      const r = dispatch(msg.method, msg.params ?? {});
+      const r = dispatch(msg.method, msg.params ?? {}, msg.meta ?? {});
       if (r && typeof r === "object" && "__err" in r) {
         const e = r.__err;
         res.end(JSON.stringify(rpcErr(msg.id, e.rpcCode, e.errorCode, e.message, e.details)));

@@ -2,7 +2,7 @@
   "name": "uemcp",
   "private": true,
   "version": "0.1.0",
-  "description": "UEMCP - client-agnostic MCP server for Unreal Engine 5.4 editor automation",
+  "description": "UEMCP - client-agnostic MCP server for Unreal Engine editor automation (engine version reported by the bridge)",
   "license": "MIT",
   "packageManager": "pnpm@11.22.0",
   "engines": {

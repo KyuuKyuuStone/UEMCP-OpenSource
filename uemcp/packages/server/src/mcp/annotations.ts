@@ -1,8 +1,9 @@
 /**
  * 工具注解（§5.0.4）：随策略模式变化。
+ * （唯一实现：policy.ts 中的旧 toolAnnotations(tool, PolicyState) 重复实现已删除——
+ *   无人引用且签名口径不同，见审查 m 系列与任务 4248c955-B。）
  */
 import type { PolicyMode, ToolName } from "@uemcp/shared";
-import type { PolicyState } from "../policy.js";
 
 export interface ToolAnnotationSet {
   title?: string;
@@ -44,5 +45,3 @@ export function toolAnnotations(tool: ToolName, mode: PolicyMode): ToolAnnotatio
         : { title: "Blueprint Query / Compile", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
   }
 }
-
-export type { PolicyState };

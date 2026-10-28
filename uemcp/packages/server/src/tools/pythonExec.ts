@@ -19,7 +19,7 @@ export const pythonExecTool: ToolDef = {
   title: "Execute Python in Editor",
   description:
     "Execute Python code on the editor game thread. P2: requires --policy full + --allow-exec (server) AND bridge allowExec. Enabling this equals handing the editor process to the caller; avoid infinite loops (timeouts cannot interrupt game-thread code). Audit records code hash only.",
-  timeoutMs: 120000,
+  timeoutMs: 120000, // 仅作声明上限参考（§2.6）：实际超时 = args.timeoutMs（§5.9 默认 10000）
   schemaFor(_p: PolicyState) {
     return PythonExecInput;
   },
@@ -62,11 +62,12 @@ export const pythonExecTool: ToolDef = {
       );
     }
     const confirmationMode = outcome === "approved" ? "elicitation" : "policy";
-    const res = await ctx.bridge.call(
-      "python.exec",
-      args as unknown as Record<string, unknown>,
-      Math.max(args.timeoutMs, 30000) /* 写方法：不自动重试 */,
-    );
+    // m-3（§5.9）：超时语义回归 Schema 契约——用户可调 1000..120000（zod 约束），
+    // 缺省 10000；client.ts 再按 §2.6 clamp 到 [1000,120000]。
+    // 旧实现 Math.max(args.timeoutMs, 30000) 把 schema 默认值 10000 架空（用户传 10s
+    // 也被抬到 30s），属语义冲突，已按审查建议移除 Server 端下限。
+    // 写方法不自动重试的语义不变（未传 retriable，默认 false）。
+    const res = await ctx.bridge.call("python.exec", args as unknown as Record<string, unknown>, args.timeoutMs);
     const meta = makeMeta(ctx, started);
     // §6.3-5：审计仅 hash/长度，永不记录源码（§6.5 红线）
     await auditCall(ctx, {

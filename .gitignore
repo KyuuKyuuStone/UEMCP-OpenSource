@@ -49,3 +49,9 @@ DerivedDataCache/
 # Test-run logs (baseline evidence lives outside git; see uemcp/tests/baseline-logs/)
 *.log
 baseline-logs/
+
+# Local verification evidence: contains absolute paths, discovery tokens and
+# machine-specific data. Kept on disk, never published.
+UEMCPBridge/Tests/smoke-runs/
+uemcp/tests/BASELINE-*.md
+uemcp/tests/PACKAGE-VERIFY-*.md

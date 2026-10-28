@@ -239,13 +239,19 @@ def _check_http(failures):
             if status == 429:
                 rate_limited.append(body)
         allowed_count = statuses.count(200)
-        if allowed_count != 3:
+        # burst=3 at 1 token/s: 3 is the deterministic answer.  A 4th token can
+        # only appear if the whole loop took longer than a second on a very
+        # loaded machine, so accept that case too but nothing beyond it.
+        if allowed_count < 3 or allowed_count > 4:
             failures.append(
-                "expected exactly 3 allowed requests (burst=3), got %d: %r"
+                "expected 3 (or 4 after a refill) allowed requests, got %d: %r"
                 % (allowed_count, statuses)
             )
-        if len(rate_limited) != 9:
-            failures.append("expected 9 rate-limited responses, got %d" % len(rate_limited))
+        if len(rate_limited) != 12 - allowed_count:
+            failures.append(
+                "expected %d rate-limited responses, got %d"
+                % (12 - allowed_count, len(rate_limited))
+            )
         if dispatcher.calls != allowed_count:
             failures.append(
                 "rejected requests reached the dispatcher: dispatcher=%d allowed=%d"

@@ -5,9 +5,11 @@
 | 核查日期 | 2026-10-28 |
 | 插件版本 | UEMCPBridge 0.1.0（纯 Python，Modules=[]） |
 | 对照引擎 | UE 5.4.4 与 UE 5.7.4（均本机安装，引擎自带 Python 均为 3.11.8） |
-| 核查范围 | `UEMCPBridge/Content/Python/` 下全部 `unreal.*` 调用点（78 处，44 个不同符号） |
+| 核查范围 | `UEMCPBridge/Content/Python/` 下全部 `unreal.*` 调用点（83 处，46 个不同符号） |
 | 核查方式 | 引擎头文件逐行对照 + 引擎二进制符号扫描 + PythonScriptPlugin C++ 源码对照 + 官方文档；**未启动编辑器** |
 | 关联任务 | 411760ab-8b5e-4b99-965c-67b6bc750fa2（UEMCPBridge 适配 UE 5.7 并修复已知缺陷） |
+
+> 占位符：`<UE_ROOT>` = 引擎安装根目录（Windows 默认位于 `Program Files\Epic Games\UE_5.7`，按实际版本替换）；`<YourProject>` = 你的 UE 工程目录；`<RepoRoot>` = 本仓库根目录。文档中不出现本机用户目录或私有工程路径。
 
 ## 1. 结论
 
@@ -25,7 +27,7 @@
 
 | 代号 | 方法 | 说明 |
 | --- | --- | --- |
-| E1 | 引擎头文件逐行对照 | `C:\Program Files\Epic Games\UE_<ver>\Engine\Source\...` 下 5.4.4 与 5.7.4 同一头文件对比（UFUNCTION 签名、UPROPERTY 名、`UE_DEPRECATED` 标记） |
+| E1 | 引擎头文件逐行对照 | `<UE_ROOT>\Engine\Source\...` 下 5.4.4 与 5.7.4 同一头文件对比（UFUNCTION 签名、UPROPERTY 名、`UE_DEPRECATED` 标记） |
 | E2 | 二进制 FName 符号扫描 | 在 `Engine\Binaries\Win64\UnrealEditor-*.dll` 中检索 UCLASS/UFUNCTION 名（79 个符号 × 16 个模块 × 两个版本）：**除 `EditorAssetLibrary`（仅 5.7 出现、属弃用类、本项目未使用）外，其余符号两版均存在；没有任何符号只在 5.4 存在** |
 | E3 | PythonScriptPlugin 源码对照 | `PyEditor.cpp` 5.4/5.7 **均为 234 行且逐行相同**（`ScopedEditorTransaction` 的实现与 `cancel()` 语义不变）；`PyCore.cpp` 的 `GetDefaultObject` 实现逐字相同；`PySlate.cpp` 有 1 处 tick 守卫变更（见 §5-V1）；模块级 Python 全局函数（`register_slate_post_tick_callback`、`get_editor_subsystem`、`get_default_object`、`load_class`、`load_object`、`find_object`、`log_warning` 等）两版方法表中均存在 |
 | E4 | 官方文档 | dev.epicgames.com 5.7 文档仍列出 `TakeHighResScreenshot` 等函数 |
@@ -74,6 +76,8 @@ Engine\Plugins\Experimental\PythonScriptPlugin\Source\PythonScriptPlugin\Private
 | 13 | `unreal.Paths.project_dir / project_saved_dir` `server.py:502` `viewport.py:41,109` | 存在 | 存在，未变 | E1：`Paths.h`（5.7 新增 `CanGetProjectDir()`，原函数保留）/E2 | 不改 |
 | 14 | `unreal.Vector / Rotator / LinearColor / Name / Quat / Text / Object` | 存在 | 存在，未变 | E2（引擎核心结构体，5.x 内稳定）；序列化逻辑不依赖版本分支 | 不改 |
 | 15 | `unreal.ScopedEditorTransaction`（含上下文管理与 `cancel()`）`actors.py:777` | 存在 | 存在，未变 | E3：`PyEditor.cpp` 两版**逐行相同**（234 行） | 不改；**回滚需真机验证（V3）** |
+| 16 | 插件启动方式：`Plugin Content/Python/init_unreal.py` 被自动执行 | 存在 | 存在，未变 | E3：`PythonScriptPlugin.cpp` 两版都会在插件 Python 路径下查找并执行 `init_unreal.py`（5.4:1355 / 5.7:1591） | 不改 |
+| 17 | 插件描述符无 `EngineVersion` 时的加载 | 允许（字段可选） | 允许（字段可选） | E4：`EngineVersion` 是可选字段，缺省时不做版本兼容性拦截 | 不改（打包可用 `Tools/stamp_uplugin.py` 注入） |
 
 ## 4. Handler / 调用点核查表
 
@@ -171,8 +175,8 @@ Engine\Plugins\Experimental\PythonScriptPlugin\Source\PythonScriptPlugin\Private
 
 ## 5. 需真机验证的项（静态无法判定）
 
-> 前提：主管确认允许启动引擎、并指定工程后进行；**不要**装进用户现有 5.4/5.7 工程，使用 `C:\UE5_P\5.7` 下任一测试工程或临时拷贝工程。
-> 所有命令均为 `UnrealEditor-Cmd.exe <Project>.uproject -run=pythonscript -script=<脚本> -unattended -nop4 -nosplash`。
+> 前提：主管确认允许启动引擎、并指定工程后进行；**不要**装进用户现有 5.4/5.7 工程，使用你本机任一测试工程或临时拷贝工程。
+> 所有命令均为 `UnrealEditor-Cmd.exe <YourProject>.uproject -run=pythonscript -script=<RepoRoot>\UEMCPBridge\Tests\<脚本> -unattended -nop4 -nosplash`。
 
 | ID | 项目 | 为什么静态判不了 | 验证步骤 | 判定标准 |
 | --- | --- | --- | --- | --- |

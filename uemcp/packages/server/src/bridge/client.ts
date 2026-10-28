@@ -1,7 +1,7 @@
 /**
  * Bridge JSON-RPC client（§2.8 内部协议 + §2.9.5 转换规则）。
- * - 连接拒绝/不可达/短时失败 → BRIDGE_UNAVAILABLE（retryable）
- * - 等待超时 → BRIDGE_TIMEOUT（phase=game_thread）
+ * - 连接拒绝/不可达/短时失败（非超时异常）→ BRIDGE_UNAVAILABLE（retryable）
+ * - 等待超时（AbortSignal TimeoutError）→ BRIDGE_TIMEOUT（phase=game_thread）
  * - 合法 JSON-RPC error → 按 data.errorCode 映射；未知 → INTERNAL
  * - 非 JSON / 5xx 无合法 body → INTERNAL（details.bridgeHttpStatus）
  * - token 轮换自愈：401/BRIDGE_UNAVAILABLE 时重新发现一次再重试
@@ -23,7 +23,6 @@ export interface BridgeCallResult<T = unknown> {
   error?: ToolErrorShape;
 }
 
-const CONNECT_WINDOW_MS = 3000; // 3s 内失败视为连接层问题
 const MAX_TIMEOUT_MS = 120000; // §2.6：单工具超时上限 120s
 
 export interface CallOptions {
@@ -188,14 +187,12 @@ export class BridgeClient {
         bridgeResult: b.result as unknown as Record<string, unknown> | undefined,
       });
     } catch (e) {
-      const elapsed = Date.now() - started;
+      // m-2（审查报告）：按异常类型区分——TimeoutError（AbortSignal.timeout
+      // 触发，elapsed 恒 ≥ timeoutMs+5s）→ BRIDGE_TIMEOUT；连接拒绝等其他异常
+      // （快速失败）→ BRIDGE_UNAVAILABLE。原 CONNECT_WINDOW_MS「elapsed<3s →
+      // 连接层失败」分支不可达（abort 时 elapsed 必 ≥ 6s），已删除。
       const isAbort = e instanceof Error && e.name === "TimeoutError";
       if (isAbort) {
-        if (elapsed < CONNECT_WINDOW_MS) {
-          return err("BRIDGE_UNAVAILABLE", `Bridge unreachable at ${endpoint.url}`, {
-            timeoutMs,
-          });
-        }
         return err(
           "BRIDGE_TIMEOUT",
           `Game-thread job timed out after ${timeoutMs}ms (method ${method})`,

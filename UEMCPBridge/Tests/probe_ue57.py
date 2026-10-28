@@ -30,18 +30,78 @@ import unreal
 RESULT = {"checks": [], "engine": {}, "python": sys.version, "capture": None}
 
 
+def _split_command_line(text):
+    """Quote-aware splitter for ``SystemLibrary.get_command_line()``."""
+    args = []
+    current = []
+    quote = None
+    for char in text:
+        if quote:
+            if char == quote:
+                quote = None
+            else:
+                current.append(char)
+        elif char in ('"', "'"):
+            quote = char
+        elif char.isspace():
+            if current:
+                args.append("".join(current))
+                current = []
+        else:
+            current.append(char)
+    if current:
+        args.append("".join(current))
+    return args
+
+
+def _all_args():
+    """Arguments from ``sys.argv`` plus the UE command line.
+
+    Under ``-run=pythonscript`` UE sets ``sys.argv`` to the script path only,
+    so options such as ``--out`` / ``--blueprint`` only survive on the engine
+    command line (visible through ``get_command_line()``).
+    """
+    args = list(sys.argv[1:])
+    try:
+        command_line = str(unreal.SystemLibrary.get_command_line())
+        args.extend(_split_command_line(command_line))
+    except Exception:
+        pass
+    return args
+
+
 def _arg(name):
-    return name in sys.argv[1:]
+    return name in _all_args()
 
 
 def _arg_value(name, default=None):
-    argv = sys.argv[1:]
+    argv = _all_args()
     for index, item in enumerate(argv):
         if item == name and index + 1 < len(argv):
             return argv[index + 1]
         if item.startswith(name + "="):
             return item.split("=", 1)[1]
     return default
+
+
+def _editor_flag():
+    """Return True/False when the engine exposes an is_editor helper.
+
+    ``unreal.is_editor()`` is a module-level function; ``SystemLibrary`` has no
+    ``is_editor`` attribute.  Older probe versions only tried the latter and
+    aborted with exit 2 before running any check.
+    """
+    candidates = (
+        getattr(unreal, "is_editor", None),
+        getattr(getattr(unreal, "SystemLibrary", None), "is_editor", None),
+    )
+    for candidate in candidates:
+        if callable(candidate):
+            try:
+                return bool(candidate())
+            except Exception:
+                continue
+    return None
 
 
 def _check(name, required, fn):
@@ -377,13 +437,14 @@ def _write_report():
 
 def main():
     try:
-        RESULT["engine"] = {
-            "version": str(unreal.SystemLibrary.get_engine_version()),
-            "editor": bool(unreal.SystemLibrary.is_editor()),
-        }
+        engine_version = str(unreal.SystemLibrary.get_engine_version())
     except Exception as exc:
         print("[probe] cannot read engine version: %s" % exc)
         return 2
+    RESULT["engine"] = {
+        "version": engine_version,
+        "editor": _editor_flag(),
+    }
 
     _check("python_globals", True, _python_globals)
     _check("unreal_editor_subsystem", True, _editor_subsystem)

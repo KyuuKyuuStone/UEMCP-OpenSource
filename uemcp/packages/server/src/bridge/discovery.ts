@@ -23,20 +23,32 @@ export interface ResolvedBridge {
 }
 
 /** 目录规范化（§2.4）：统一 /、去尾斜杠；hash 与比较共用 */
-function normalizeProjectDir(dir: string): string {
+export function normalizeProjectDir(dir: string): string {
   return dir.replaceAll("\\", "/").replace(/\/+$/, "");
 }
 
-/** 比较按平台语义：Windows 大小写不敏感，POSIX 保持大小写敏感 */
-function equalProjectDir(a: string, b: string): boolean {
+/**
+ * 比较按平台语义（N-3）：win32 大小写不敏感（NTFS 默认），POSIX 大小写敏感
+ * （大小写敏感 FS 上仅大小写不同的两个目录是两个工程，宽松比较会错选桥接；
+ * 保守方向的误差是「发现失败报 BRIDGE_UNAVAILABLE」而非「连错编辑器」）。
+ * platform 参数化以便单元测试覆盖两种分支（真实分支由运行时 platform 决定）。
+ */
+export function equalProjectDirOn(
+  platform: NodeJS.Platform,
+  a: string,
+  b: string,
+): boolean {
   const na = normalizeProjectDir(a);
   const nb = normalizeProjectDir(b);
-  return process.platform === "win32"
-    ? na.toLowerCase() === nb.toLowerCase()
-    : na === nb;
+  return platform === "win32" ? na.toLowerCase() === nb.toLowerCase() : na === nb;
 }
 
-function projectHash(dir: string): string {
+function equalProjectDir(a: string, b: string): boolean {
+  return equalProjectDirOn(process.platform, a, b);
+}
+
+/** 发现文件名 hash：路径规范化后 sha1 前 16 位（斜杠/尾斜杠差异不影响） */
+export function projectHash(dir: string): string {
   return createHash("sha1").update(normalizeProjectDir(dir), "utf8").digest("hex").slice(0, 16);
 }
 
