@@ -37,10 +37,14 @@ uemcp/
 
 ```bash
 cd uemcp
-pnpm install
-pnpm build          # = pnpm -r build（shared: tsc；server: tsup → dist/index.js）
-pnpm typecheck      # 两个包 tsc --noEmit
+pnpm install         # 1. 安装依赖（顺序必须是 install → build → typecheck → smoke → test）
+pnpm build           # 2. = pnpm -r build（shared: tsc；server: tsup → dist/index.js）
+pnpm typecheck       # 3. 两个包 tsc --noEmit（必须在 build 之后：干净树上先跑会报 TS2307 找不到构建产物引用，双重实测确认）
+node scripts/smoke.mjs   # 4. Server 自测（mock bridge，无需真实 Bridge；见 §5；也可 pnpm smoke）
+pnpm test            # 5. 单元/黑盒测试（node --test，用例见 uemcp/tests/）
 ```
+
+> 顺序约束：`typecheck` 依赖 `build` 产物（干净树上 typecheck 先于 build 必报 TS2307），`smoke`/`test` 依赖 build 产出的 `dist/index.js`。
 
 实测输出（2026-10-20）：`pnpm install` Done（178 包）；`pnpm build` shared `tsc` 无错误、server `tsup` ESM+DTS `Build success`；`pnpm typecheck` 两包 Done，无错误。
 

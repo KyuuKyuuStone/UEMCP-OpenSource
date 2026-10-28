@@ -12,14 +12,15 @@
         UEMCPBridge/
             UEMCPBridge.uplugin   (EngineVersion + Description injected per version)
             README.md             (copied as-is from UEMCPBridge/)
+            COMPAT-UE57.md        (5.7 compatibility table, shipped with the package)
             LICENSE               (full MIT text copied from the repository root - NOT a pointer)
             Content/...           (copied recursively; __pycache__ / *.py[cod] pruned)
-            Tests/                (self-check scripts; *.ps1 executors, smoke-runs/ run
-                                   artifacts, SMOKE-REAL-ENGINE.md, __pycache__, *.py[cod]
-                                   are excluded - maintainer-only material stays out)
+            Tests/                (self-check scripts + SMOKE-REAL-ENGINE.md; *.ps1 executors,
+                                   smoke-runs/ run artifacts, __pycache__, *.py[cod] are
+                                   excluded - maintainer-only material stays out)
 
-    Tools/ and COMPAT-UE57.md are never packaged (source-repository only; the README
-    shipped in the package states this).
+    Tools/ is never packaged (source-repository only; the README shipped in the package
+    states this).
 
     Both/all versions are built from ONE staging snapshot, so the packages are guaranteed
     to share an identical file manifest (verified in-script before exit). A
@@ -118,6 +119,7 @@ function Verify-Package([string]$ZipPath, $VersionInfo, [string]$LicenseHash) {
         if ($ps1.Count -gt 0) { throw "verification failed: .ps1 executors under Tests/: $($ps1 -join ', ')" }
         foreach ($must in @('UEMCPBridge/UEMCPBridge.uplugin',
                             'UEMCPBridge/README.md',
+                            'UEMCPBridge/COMPAT-UE57.md',
                             'UEMCPBridge/LICENSE',
                             'UEMCPBridge/Content/Python/uemcp_bridge/server.py',
                             'UEMCPBridge/Content/Python/init_unreal.py')) {
@@ -125,6 +127,20 @@ function Verify-Package([string]$ZipPath, $VersionInfo, [string]$LicenseHash) {
         }
         if (@($names | Where-Object { $_ -like 'UEMCPBridge/Tests/*' }).Count -lt 1) {
             throw 'verification failed: no self-check files under UEMCPBridge/Tests/'
+        }
+        if ($names -notcontains 'UEMCPBridge/Tests/SMOKE-REAL-ENGINE.md') {
+            throw 'verification failed: required entry missing: UEMCPBridge/Tests/SMOKE-REAL-ENGINE.md'
+        }
+
+        # every .md referenced by the packaged README must ship in the package (anti dead-link)
+        $readmeText = Read-ZipEntryText $Archive 'UEMCPBridge/README.md'
+        $mdRefs = [regex]::Matches($readmeText, '[A-Za-z0-9_.\-]+\.md') |
+            ForEach-Object { $_.Value } | Sort-Object -Unique
+        foreach ($md in $mdRefs) {
+            $hit = @($names | Where-Object { $_ -eq "UEMCPBridge/$md" -or $_ -like "*/$md" })
+            if ($hit.Count -eq 0) {
+                throw "verification failed: README references '$md' which is not in the package (dead link)"
+            }
         }
 
         # LICENSE must be the full MIT text, byte-identical to the repository root LICENSE
@@ -173,6 +189,7 @@ try {
     $pluginDir    = Join-Path $repoRoot 'UEMCPBridge'
     $upluginSrc   = Join-Path $pluginDir 'UEMCPBridge.uplugin'
     $pluginReadme = Join-Path $pluginDir 'README.md'
+    $compatDoc    = Join-Path $pluginDir 'COMPAT-UE57.md'
     $contentDir   = Join-Path $pluginDir 'Content'
     $testsDir     = Join-Path $pluginDir 'Tests'
     $repoLicense  = Join-Path $repoRoot 'LICENSE'
@@ -194,7 +211,7 @@ try {
     Write-Host ("pack-bridge: versions = " + (($versions | ForEach-Object { "$($_.Input) (EngineVersion=$($_.Full))" }) -join ', '))
 
     # ---------------------------------------------------------------- fail fast on missing sources
-    foreach ($required in @($pluginDir, $upluginSrc, $pluginReadme, $contentDir, $testsDir, $repoLicense)) {
+    foreach ($required in @($pluginDir, $upluginSrc, $pluginReadme, $compatDoc, $contentDir, $testsDir, $repoLicense)) {
         if (-not (Test-Path $required)) { throw "Required source not found: $required" }
     }
     if (-not (Test-Path (Join-Path $contentDir 'Python'))) { throw "Required source not found: $(Join-Path $contentDir 'Python')" }
@@ -215,6 +232,7 @@ try {
     New-Item -ItemType Directory -Path $commonPlugin -Force | Out-Null
 
     Copy-Item $pluginReadme (Join-Path $commonPlugin 'README.md')
+    Copy-Item $compatDoc    (Join-Path $commonPlugin 'COMPAT-UE57.md')
     Copy-Item $repoLicense  (Join-Path $commonPlugin 'LICENSE')   # full MIT text, not a pointer
     Copy-Item $contentDir (Join-Path $commonPlugin 'Content') -Recurse
     Copy-Item $testsDir   (Join-Path $commonPlugin 'Tests')   -Recurse
@@ -223,14 +241,12 @@ try {
     Get-ChildItem $stagingRoot -Recurse -Directory -Force -Filter '__pycache__' | Remove-Item -Recurse -Force
     Get-ChildItem $stagingRoot -Recurse -File -Force -Include '*.pyc', '*.pyo'  | Remove-Item -Force
 
-    # prune maintainer-only material from Tests/: .ps1 executors, run artifacts, runner doc
+    # prune maintainer-only material from Tests/: .ps1 executors and run artifacts
+    # (Tests/*.md docs - e.g. SMOKE-REAL-ENGINE.md - DO ship with the package)
     Get-ChildItem (Join-Path $commonPlugin 'Tests') -Recurse -File -Force -Filter '*.ps1' | Remove-Item -Force
     $testsStaged = Join-Path $commonPlugin 'Tests'
     Get-ChildItem $testsStaged -Recurse -Directory -Force | Where-Object { $_.Name -eq 'smoke-runs' } | Remove-Item -Recurse -Force
-    if (Test-Path (Join-Path $testsStaged 'SMOKE-REAL-ENGINE.md')) {
-        Remove-Item -Force (Join-Path $testsStaged 'SMOKE-REAL-ENGINE.md')
-    }
-    Write-Host 'pack-bridge: staged common snapshot (README, full MIT LICENSE, Content/, Tests/ minus ps1 & smoke-runs)'
+    Write-Host 'pack-bridge: staged common snapshot (README, COMPAT-UE57.md, full MIT LICENSE, Content/, Tests/ minus ps1 & smoke-runs)'
 
     $repoLicenseHash = (Get-FileHash $repoLicense -Algorithm SHA256).Hash.ToLower()
 

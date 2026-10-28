@@ -2,7 +2,7 @@
 
 面向 Unreal Engine 5 编辑器的本地 HTTP JSON-RPC 桥接插件，是 UEMCP 双进程架构中的编辑器执行层。纯 Python，无 C++ 模块，不需要编译。
 
-当前适配：**UE 5.4.4 与 UE 5.7.4**（引擎自带 Python 均为 3.11.8）。5.7 的逐调用点核查结论见 [`COMPAT-UE57.md`](COMPAT-UE57.md)（仅源码仓库），插件不写死引擎版本。
+当前适配：**UE 5.4.4 与 UE 5.7.4**（引擎自带 Python 均为 3.11.8）。5.7 的逐调用点核查结论见 [`COMPAT-UE57.md`](COMPAT-UE57.md)，插件不写死引擎版本。
 
 本文档自包含：限流配置见 §3.1，本轮行为变化见 §7，5.7 兼容与验证见 §8，已知限制见 §9，自测见 §10。
 
@@ -31,7 +31,7 @@ UEMCPBridge/
 └─ Tests/                           # 11 个无编辑器自检 + 引擎冒烟/探针
 ```
 
-> **发行包（zip）与源码仓库的差异**：发行包内只含 `UEMCPBridge.uplugin`（打包时已注入 `EngineVersion` 与版本化 `Description`）、`Content/`、`README.md`、`LICENSE`（MIT 全文）与 `Tests/`（仅 `*.py` 自检脚本，不含 `*.ps1` 执行器与 `smoke-runs/` 运行产物）。`Tools/`、`COMPAT-UE57.md`、`Tests/*.ps1` 与 `Tests/SMOKE-REAL-ENGINE.md` **仅在源码仓库中可用**（not included in the archive）：`Tools/stamp_uplugin.py` 由维护者在打包时执行，发行包内不含该工具；下文凡引用上述文件之处，均指源码仓库中的副本。发行包内的 `Tests/*.py` 自检可在解包后直接运行（第 10 项 `test_uplugin_metadata.py` 依赖 `Tools/`，请在源码检出中运行）。
+> **发行包（zip）与源码仓库的差异**：发行包内含 `UEMCPBridge.uplugin`（打包时已注入 `EngineVersion` 与版本化 `Description`）、`Content/`、`README.md`、`LICENSE`（MIT 全文）、`COMPAT-UE57.md`（5.7 兼容核查表）与 `Tests/`（`*.py` 自检脚本及 `Tests/SMOKE-REAL-ENGINE.md` 真机验证说明；不含 `*.ps1` 执行器与 `smoke-runs/` 运行产物）。`Tools/` 与 `Tests/*.ps1` **仅在源码仓库中提供**（not included in the archive）：`Tools/stamp_uplugin.py` 由维护者在打包时执行，`ue_smoke_run.ps1` / `ue_probe_run.ps1` / `ue_common.ps1` 是维护者的一键真机执行器，二者均不随包分发；下文凡引用上述文件之处，均指源码仓库中的副本。发行包内的 `Tests/*.py` 自检可在解包后直接运行（第 10 项 `test_uplugin_metadata.py` 依赖 `Tools/`，请在源码检出中运行）。
 
 ## 2. 启用与启动
 
@@ -160,7 +160,7 @@ curl -s http://127.0.0.1:18778/health
 
 **结论：本插件在 UE 5.4.4 与 UE 5.7.4 上不需要版本分支代码。** 全部 83 处 `unreal.*` 调用点（46 个不同符号）在两版引擎中均存在，签名与返回类型无破坏性变化；仅有两处向后兼容的函数增量（`DuplicateActor` 新增重载、static switch setter 新增可选尾参）。
 
-逐调用点核查表（调用点 / 5.4 状态 / 5.7 状态 / 依据 / 是否需改）、7 项真机验证步骤、证据来源与已知限制见 [`COMPAT-UE57.md`](COMPAT-UE57.md)（仅源码仓库，发行包内不含）。
+逐调用点核查表（调用点 / 5.4 状态 / 5.7 状态 / 依据 / 是否需改）、7 项真机验证步骤、证据来源与已知限制见 [`COMPAT-UE57.md`](COMPAT-UE57.md)（随发行包分发）。
 
 怎么确认你的环境兼容：
 
@@ -240,7 +240,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File UEMCPBridge\Tests\ue_smoke_r
 powershell -NoProfile -ExecutionPolicy Bypass -File UEMCPBridge\Tests\ue_probe_run.ps1
 ```
 
-用法、每步证据与已知不可自动化项见 [`Tests/SMOKE-REAL-ENGINE.md`](Tests/SMOKE-REAL-ENGINE.md)。
+用法、每步证据与已知不可自动化项见 [`Tests/SMOKE-REAL-ENGINE.md`](Tests/SMOKE-REAL-ENGINE.md)（随发行包分发）。
+
+> 注：上述 `.ps1` 执行器（`ue_smoke_run.ps1` / `ue_probe_run.ps1` / `ue_common.ps1`）仅在源码仓库中提供（not included in the archive）——它们会启动编辑器、写入 `~/.uemcp` 与 `Saved/`，属维护者工具，不随包分发；发行包内只含 Python 自检脚本。
 
 ## 11. 商标
 
