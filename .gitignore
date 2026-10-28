@@ -45,3 +45,7 @@ DerivedDataCache/
 # Local test-run artifacts (assertion runners, audit dirs, pid files)
 .test-run/
 *.pid
+
+# Test-run logs (baseline evidence lives outside git; see uemcp/tests/baseline-logs/)
+*.log
+baseline-logs/
