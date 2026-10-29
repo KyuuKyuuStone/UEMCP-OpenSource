@@ -7,6 +7,9 @@ pnpm-debug.log*
 
 # Release archives (produced by scripts/pack-bridge.ps1)
 dist-release/
+# npm pack tarballs (server distribution artefacts; attached to releases, not committed)
+*.tgz
+*.tar.gz
 
 # Environment / secrets — never commit
 .env
