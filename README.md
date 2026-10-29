@@ -97,6 +97,8 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 
 > 不用发行包时，把仓库里的 `UEMCPBridge/` 目录放进 `Plugins/` 等价。
 
+> 插件为纯 Python，下载后无需编译：解压到 `Plugins/` 后由编辑器直接加载。
+
 ### 安装（UE 侧插件）
 
 1. 复制 `UEMCPBridge/` 到 `<Project>/Plugins/UEMCPBridge/`。
@@ -340,6 +342,8 @@ Install in three steps:
 3. Start the editor, then run `curl http://127.0.0.1:18778/health`; a response containing `"app":"uemcp-bridge"` means the bridge is up.
 
 > Prefer source? Copy the repository's `UEMCPBridge/` directory into `Plugins/` instead.
+
+> The plugin is pure Python: there is no build step after download — unzip it into `Plugins/` and the editor loads it directly.
 
 ### Install (UE plugin)
 

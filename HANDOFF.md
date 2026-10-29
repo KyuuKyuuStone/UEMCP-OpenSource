@@ -66,8 +66,7 @@ UEMCP-OpenSource/
    ├─ UEMCP-架构裁决补充.md        # D1/D1b/D2/D6/D10/D11/D12 决策记录（已并入 v0.2.0）
    ├─ UEMCP-测试计划.md           # 86 条用例与判定标准
    ├─ UEMCP-测试执行报告.md       # v1.2：6 缺陷修复验证 + 未测项清单 §5
-   ├─ UEMCP-代码审查报告.md       # 2 Critical/7 Major/13 Minor + 第二轮复审（7 项修复全部通过）
-   └─ UEMCP-README草稿.md         # ⚠️ 实现前旧草稿（"代码尚未实现"），已过时，发布前应删除或重写
+   └─ UEMCP-代码审查报告.md       # 2 Critical/7 Major/13 Minor + 第二轮复审（7 项修复全部通过）
 ```
 
 ---
@@ -362,7 +361,6 @@ curl -s -X POST http://127.0.0.1:18777/mcp \
    - [ ] 无 `.env`、`.heihei/`、`.test-run/`、`*.pid`（已加入 .gitignore）
    - [ ] 无 token/密钥：`~/.uemcp/bridge.json` 类发现文件不在仓库；文档中无 token 明文（已核对）
    - [ ] 绝对路径审查：`UEMCPBridge/README.md` §7 命令含 `<RepoRoot>\<Project>` 旧写法的本机绝对路径与引擎安装路径——建议泛化为 `<Project>` / `<EnginePath>`；`docs/UEMCP-测试执行报告.md` 含内部会话 ID、PID、本机用户名路径——发布前评估保留（作为测试证据）或删除
-   - [ ] `docs/UEMCP-README草稿.md` 为实现前旧稿（声明"代码尚未实现"，与本仓库现状矛盾）——**发布前删除或重写**
 5. **git 操作示例**（确认检查项通过后再执行）：
 
 ```bash

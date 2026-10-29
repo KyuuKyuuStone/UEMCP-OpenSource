@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- Bilingual README (中文 / English) with a language switcher, plus a download section that links the release archives directly.
+- GitHub Actions CI (build, typecheck, test and smoke on `windows-latest`) and issue templates for bug reports and feature requests.
+- `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md` and a pull-request template.
+- Documented known limitation: when the editor window loses focus, UE throttles ticks (about 3.1 fps in our test) and `viewport.capture` may return `CAPTURE_TIMEOUT`; keep the window foreground, raise `timeoutMs`, or retry.
+
+### Changed
+
+- README now states UE 5.4 / 5.7 support (tested on 5.4.4 / 5.7.4) and the current count of no-engine self-check scripts (11).
+- README Cursor note now points to the verified `/sse` fallback instead of leaving the 0.46+ `/mcp` path unexplained.
+- Test harness prefers `Saved/Logs/<ProjectName>.log` and adds an optional foreground/capture-retry assist (`-NoFocusAssist` to disable).
+- Documentation cleanup: removed the pre-implementation README draft and replaced internal session IDs and local paths in `docs/` with placeholders.
+
+### Fixed
+
+- Harness could read a newer unrelated log (`cef3.log`) instead of the project log, causing a false failure.
+
+## [0.1.0] - 2026-10-28
+
+First public release. Distributed as three release assets: `UEMCPBridge-5.4.zip`, `UEMCPBridge-5.7.zip` and `SHA256SUMS.txt`.
+
+### Added
+
+- **UEMCPBridge** — a pure-Python editor plugin (no C++ modules, no build step) that exposes `/health`, `/rpc` and `/events` on loopback and runs every `unreal.*` call through a single game-thread queue.
+- **10 MCP tools** — editor status, actor query/edit, level control, asset search, material parameters, viewport capture, Blueprint query/compile, console commands and Python execution.
+- **Three transports** — Streamable HTTP (`/mcp`), legacy SSE (`/sse`) and stdio.
+- **Dual permission gates** — server policy × bridge configuration, with `allowWrite`, `allowConsole` and `allowExec` off by default.
+- **Bridge-side global rate limiting** — 30 req/s token bucket with `RATE_LIMITED` (HTTP 429) before a job is queued.
+- **Tool-level `outputSchema`** — structured results with `structuredContent.error` on failures.
+- **UE 5.7 compatibility** — per-call-point audit against UE 5.4.4 and 5.7.4, with dual-engine packages.
+- Discovery files under `~/.uemcp/`, token rotation on every editor start, audit logging that excludes tokens and Python source, and the `CAPABILITY_UNAVAILABLE` boundary for Blueprint node editing.
+
+[Unreleased]: https://github.com/KyuuKyuuStone/UEMCP-OpenSource/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/tag/v0.1.0

@@ -348,7 +348,7 @@ class GameThreadDispatcher:
 ```json
 {
   "jsonrpc": "2.0",
-  "id": "6f1c2d9e-7a1b-4c3d-9e0f-123456789abc",
+  "id": "<request-id>",
   "method": "actor.edit",
   "params": { "operations": [], "dryRun": false },
   "meta": { "timeoutMs": 30000, "traceId": "trc_01H..." }
@@ -360,7 +360,7 @@ class GameThreadDispatcher:
 ```json
 {
   "jsonrpc": "2.0",
-  "id": "6f1c2d9e-7a1b-4c3d-9e0f-123456789abc",
+  "id": "<request-id>",
   "result": { "ok": true, "data": {}, "warnings": [], "meta": {} }
 }
 ```
@@ -370,7 +370,7 @@ class GameThreadDispatcher:
 ```json
 {
   "jsonrpc": "2.0",
-  "id": "6f1c2d9e-7a1b-4c3d-9e0f-123456789abc",
+  "id": "<request-id>",
   "error": {
     "code": -32006,
     "message": "Actor not found",

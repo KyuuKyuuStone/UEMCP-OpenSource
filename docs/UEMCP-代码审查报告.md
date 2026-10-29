@@ -43,7 +43,7 @@
 #### C-2 `--project` 发现来源在常见输入下静默失效并跨工程回退
 
 - **位置**：`uemcp/packages/server/src/bridge/discovery.ts:123`（`raw.projectDir !== opts.projectDir.replaceAll("\\", "/")`，未去尾斜杠、未做大小写不敏感比较）；hash 计算在 `discovery.ts:23-26` 与 `uemcp_bridge/discovery.py:28-30` 均做了去尾斜杠规范化。
-- **触发条件**：`--project "C:\UE5_P\5.4\XQHCPP_54\"`（带尾反斜杠）或大小写不一致输入。此时 hash 文件能命中（hash 用规范化目录计算），但 `projectDir` 直接比较失败 → `continue` → 落入来源 3 `~/.uemcp/bridge.json`。
+- **触发条件**：`--project "<YourProject>\"`（带尾反斜杠）或大小写不一致输入。此时 hash 文件能命中（hash 用规范化目录计算），但 `projectDir` 直接比较失败 → `continue` → 落入来源 3 `~/.uemcp/bridge.json`。
 - **影响**：多编辑器场景下，Server 会静默连接"最近启动"的**其他工程**编辑器；随后 `actor.edit`/`level.control` 等写操作作用于非预期工程。仅留 `bridge_discovery_project_mismatch` warn 日志，客户端无感知。用户显式指定 `--project` 的隔离意图被绕过。
 - **修改建议**：两侧比较使用与 hash 相同的 `normalizeProjectDir`（去尾斜杠；Windows 下大小写不敏感比较）；`--project` 指定时若 project-hash 来源失败应硬失败（返回 `BRIDGE_UNAVAILABLE`），**不回退**到 `bridge.json`/默认端口。
 

@@ -3,10 +3,10 @@
 | 项 | 值 |
 |---|---|
 | 报告版本 | 1.2（2026-10-20，v1.1 + 最终端到端复测轮） |
-| 测试执行 | 测试角色（会话 f785ec80-67ad-401a-b02b-52b779261daf） |
+| 测试执行 | 测试角色（会话 `<session-id>`） |
 | 依据 | 《UEMCP MVP 测试计划与验收标准》v0.1.1（86 条用例）、《UEMCP 架构设计》v0.2.0 |
 | 被测版本 | MCP Server 0.1.0（`uemcp/packages/server/dist/index.js`，开发自测后交付）；UEMCPBridge 0.1.0（含主管确认的 3 项修复：Critical-1 INVALID_ARGUMENT 错误码等，编辑器 PID 57376 起生效） |
-| 环境 | Windows 11 Pro 10.0.26200；Node v24.18.0；UE 5.4.4-35576357；工程 `C:\UE5_P\5.4\XQHCPP_54`；编辑器 UnrealEditor.exe 5.4 |
+| 环境 | Windows 11 Pro 10.0.26200；Node v24.18.0；UE 5.4.4-35576357；工程 `<YourProject>`；编辑器 UnrealEditor.exe 5.4 |
 
 ---
 
@@ -57,7 +57,7 @@ node .test-run/runner-sse.mjs http://127.0.0.1:18790                # PROTO-13/1
 ### 阶段 B（真实编辑器）
 
 ```powershell
-Start-Process "C:\Program Files\Epic Games\UE_5.4\Engine\Binaries\Win64\UnrealEditor.exe" 'C:\UE5_P\5.4\XQHCPP_54\XQHCPP_54.uproject'
+Start-Process "<UE_ROOT>\Engine\Binaries\Win64\UnrealEditor.exe" '<YourProject>\<YourProject>.uproject'
 # 编辑器 PID：47952（初启）→ 57376（allowWrite:true）→ 69328（allowWrite:false 复测/终验）
 # 桥接就绪：http://127.0.0.1:18778/health 200 且 app=uemcp-bridge，约 22 秒
 ```
