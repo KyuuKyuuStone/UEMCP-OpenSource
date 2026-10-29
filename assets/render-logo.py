@@ -248,7 +248,7 @@ def render_social(path):
     url_font = _font(int(19 * scale_factor), bold=False)
     _centered(draw, "Client-agnostic MCP gateway for editor automation",
               headline_font, int(height * 0.685), PAPER, width=width)
-    _centered(draw, "Pure Python bridge  ·  zero compile  ·  loopback only",
+    _centered(draw, "Pure Python bridge  ·  no C++ build  ·  loopback only",
               sub_font, int(height * 0.785), SLATE, width=width)
     _centered(draw, "github.com/KyuuKyuuStone/UEMCP-OpenSource",
               url_font, int(height * 0.92), "#4B5B73", width=width)

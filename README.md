@@ -76,6 +76,22 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4 编辑器 MCP（Model Context 
 - Node.js **>= 20**、pnpm 11（或 corepack）
 - 无需 Python 包管理（UE 侧仅标准库）；无需 C++ 编译
 
+## 下载
+
+当前版本 **v0.1.0**，三个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
+
+- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/UEMCPBridge-5.4.zip>
+- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/UEMCPBridge-5.7.zip>
+- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/SHA256SUMS.txt>
+
+安装三步：
+
+1. 解压到 `<YourProject>/Plugins/`，得到 `Plugins/UEMCPBridge/`。
+2. 启用 `UEMCPBridge`、`PythonScriptPlugin`、`EditorScriptingUtilities`（`.uproject` 写法见下节）。
+3. 启动编辑器后执行 `curl http://127.0.0.1:18778/health`，返回 `"app":"uemcp-bridge"` 即就绪。
+
+> 不用发行包时，把仓库里的 `UEMCPBridge/` 目录放进 `Plugins/` 等价。
+
 ## 安装（UE 侧插件）
 
 1. 复制 `UEMCPBridge/` 到 `<Project>/Plugins/UEMCPBridge/`。
@@ -218,6 +234,10 @@ UE 侧自检（无需引擎的 8 个脚本 + 需 UnrealEditor-Cmd 的冒烟）�
 | [docs/UEMCP-测试执行报告.md](docs/UEMCP-测试执行报告.md) | 实测结论与覆盖范围 |
 | [docs/UEMCP-代码审查报告.md](docs/UEMCP-代码审查报告.md) | 两轮审查记录 |
 | [HANDOFF.md](HANDOFF.md) | 接手者指南（项目状态/已知限制/发布清单/待办） |
+
+## 已知限制
+
+本插件只作用于编辑器进程，不解析离线 `.uasset`，不操作打包后的运行时。
 
 ## License
 
