@@ -1,3 +1,12 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-on-dark.svg">
+    <img src="assets/logo.svg" alt="UEMCP logo" width="150">
+  </picture>
+</p>
+
+<p align="center"><sub>品牌素材（标志 / 图标 / 深色版 / PNG / 配色规范）：<a href="assets/README.md">assets/README.md</a></sub></p>
+
 # UEMCP
 
 > **Unreal and Unreal Engine are trademarks or registered trademarks of Epic Games, Inc. in the United States and elsewhere. This project is an independent, community-developed tool and is not affiliated with, endorsed by, or sponsored by Epic Games, Inc. "Unreal" is used solely to describe compatibility with Unreal Engine. All other trademarks are the property of their respective owners.**

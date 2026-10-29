@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="uemcp-mark-title uemcp-mark-desc">
+  <title id="uemcp-mark-title">UEMCP icon</title>
+  <desc id="uemcp-mark-desc">Square app icon: white U-shaped bridge with two port nodes and a cyan diamond gateway node on a rounded dark tile. No text, safe down to 32x32.</desc>
+
+  <rect width="512" height="512" rx="104" fill="#0B1220"/>
+
+  <g transform="translate(256 256) scale(1.28) translate(-256 -208)">
+    <g fill="none" stroke="#F7F9FC" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M150 94 V214 A106 106 0 0 0 362 214 V94"/>
+    </g>
+    <circle cx="150" cy="94" r="40" fill="#F7F9FC"/>
+    <circle cx="362" cy="94" r="40" fill="#F7F9FC"/>
+    <path d="M256 284 L292 320 L256 356 L220 320 Z" fill="#22D3EE"/>
+  </g>
+</svg>

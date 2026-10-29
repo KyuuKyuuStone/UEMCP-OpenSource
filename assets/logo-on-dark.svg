@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="uemcp-dark-title uemcp-dark-desc">
+  <title id="uemcp-dark-title">UEMCP (dark background)</title>
+  <desc id="uemcp-dark-desc">Light-ink variant of the UEMCP lockup for dark surfaces. Transparent background; place on #0B1220 or darker.</desc>
+
+  <!-- Mark: 40-unit stroke (= 2.5 px at 32x32) -->
+  <g fill="none" stroke="#F7F9FC" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M150 94 V214 A106 106 0 0 0 362 214 V94"/>
+  </g>
+  <circle cx="150" cy="94" r="40" fill="#F7F9FC"/>
+  <circle cx="362" cy="94" r="40" fill="#F7F9FC"/>
+  <path d="M256 284 L292 320 L256 356 L220 320 Z" fill="#22D3EE"/>
+
+  <!-- Wordmark: monoline paths, no font dependency -->
+  <g fill="none" stroke="#F7F9FC" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M90 402 V436 A24 24 0 0 0 138 436 V402"/>
+    <path d="M212 402 H164 V460 H212"/>
+    <path d="M164 431 H206"/>
+    <path d="M238 460 V402 L262 436 L286 402 V460"/>
+    <path d="M355 409 A29 29 0 1 0 355 453"/>
+    <path d="M386 460 V402 H409 A17 17 0 0 1 409 436 H386"/>
+  </g>
+</svg>
