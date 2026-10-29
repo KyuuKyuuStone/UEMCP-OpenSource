@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - Harness could read a newer unrelated log (`cef3.log`) instead of the project log, causing a false failure.
 - `viewport.capture` no longer blocks until the server-side 45 s timeout: the bridge now bounds the capture itself, reports `CAPTURE_TIMEOUT` with render-environment diagnostics, and stops forcing the game view. Root cause confirmed as UE throttling ticks (~3 fps) while the editor window is minimized or unfocused — foreground capture was measured at 132–976 ms.
 - `blueprint.query` no longer returns an "empty success": when parent class, variables and graphs are all empty the handler raises `UNSUPPORTED` with per-property diagnostics. Reading blueprint structure still depends on engine Python exposure and remains unreliable.
+- `blueprint.query` now reads real structure where the engine allows it: `parentClass`, `generatedClass` and `blueprintType` come from Asset Registry tags (verified on 5.4.4: `Actor`), and `EventGraph` / `UserConstructionScript` / `AnimGraph` are discovered through `BlueprintEditorLibrary.find_graph`. `variables` stay unavailable because `UBlueprint.NewVariables` is a protected property — the response now says `variablesUnavailable=NEW_VARIABLES_PROTECTED_IN_ENGINE_PYTHON` instead of returning an empty list.
 - JSON and SSE responses (`/mcp`, `/health`, error envelopes) now carry an explicit `charset=utf-8`, so clients that default to Latin-1 (e.g. PowerShell 5.1 `Invoke-WebRequest`) no longer garble non-ASCII names.
 
 
