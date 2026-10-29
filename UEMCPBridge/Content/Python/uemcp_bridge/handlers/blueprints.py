@@ -52,6 +52,42 @@ _CPF_NET = 0x0000000000000020
 _CPF_EXPOSE_ON_SPAWN = 0x0000000000000080
 
 
+def _describe_exception(exc):
+    message = str(exc)
+    return "%s: %s" % (exc.__class__.__name__, message) if message else exc.__class__.__name__
+
+
+_STRUCTURE_PROBES = (
+    "parent_class",
+    "new_variables",
+    "ubergraph_pages",
+    "function_graphs",
+    "macro_graphs",
+)
+
+
+def _structure_diagnostics(blueprint):
+    """Record what each introspection probe returned or raised.
+
+    Used to turn a silent "empty success" into an actionable error: when the
+    editor Python API exposes none of the structure properties we report the
+    per-property outcome instead of returning an empty blueprint.
+    """
+    diagnostics = {}
+    for prop in _STRUCTURE_PROBES:
+        try:
+            value = blueprint.get_editor_property(prop)
+        except Exception as exc:
+            diagnostics[prop] = {"ok": False, "error": _describe_exception(exc)}
+            continue
+        try:
+            count = len(value) if isinstance(value, (list, tuple)) else None
+        except Exception:
+            count = None
+        diagnostics[prop] = {"ok": True, "type": type(value).__name__, "count": count}
+    return diagnostics
+
+
 def _load_blueprint(path):
     unreal = get_unreal()
     asset = load_asset(path)
@@ -419,14 +455,16 @@ def handle(server, params):
 
     # action == "query"
     data = {"blueprintPath": blueprint_path}
+    structure_errors = {}
 
     if "parent" in include:
         try:
             parent = blueprint.get_editor_property("parent_class")
             data["parentClass"] = str(parent.get_name()) if parent else ""
-        except Exception:
+        except Exception as exc:
             data["parentClass"] = ""
             warnings.append("PARENT_CLASS_UNAVAILABLE")
+            structure_errors["parent_class"] = _describe_exception(exc)
 
     if "variables" in include:
         data["variables"] = _variables(blueprint)
@@ -461,6 +499,29 @@ def handle(server, params):
 
     if "graphs" in include:
         data["graphs"] = graph_entries
+
+    # An "empty success" is worse than an error: callers cannot tell a blueprint
+    # with no structure from one we failed to introspect. When parent class,
+    # variables and graphs all came back empty, report what the API actually
+    # did instead of returning a hollow payload.
+    if (
+        not data.get("parentClass")
+        and not data.get("variables")
+        and not data.get("graphs")
+    ):
+        raise RpcError(
+            "UNSUPPORTED",
+            "Blueprint structure introspection returned nothing for %s: the editor "
+            "Python API did not expose parent class, variables or graphs for this asset"
+            % blueprint_path,
+            {
+                "blueprintPath": blueprint_path,
+                "diagnostics": _structure_diagnostics(blueprint),
+                "observedErrors": structure_errors,
+                "hint": "This is an engine Python API limitation, not a missing asset. "
+                        "Compile action and asset search still work.",
+            },
+        )
 
     if "interfaces" in include:
         data["interfaces"] = _interfaces(blueprint)
