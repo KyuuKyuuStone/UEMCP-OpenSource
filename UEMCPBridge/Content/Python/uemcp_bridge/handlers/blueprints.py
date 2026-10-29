@@ -111,6 +111,104 @@ def _load_blueprint(path):
     return asset
 
 
+def _short_class_name(tag_value):
+    """Turn an asset-registry class path into a short class name.
+
+    ``"/Script/CoreUObject.Class'/Script/Engine.Actor'"`` -> ``"Actor"``
+    """
+    text = str(tag_value or "")
+    if not text or text == "None":
+        return ""
+    if "'" in text:
+        inner = text.split("'", 1)[1].rstrip("'")
+        return inner.rsplit(".", 1)[-1] or inner.rsplit("/", 1)[-1]
+    return text.rsplit(".", 1)[-1]
+
+
+def _registry_tags(asset_path):
+    """Read Asset Registry tags for a Blueprint.
+
+    Blueprint structure properties (``ParentClass``, ``NewVariables``,
+    ``UbergraphPages``...) are *protected* on ``UBlueprint`` and cannot be read
+    through ``get_editor_property`` in UE 5.4/5.7 Python. The Asset Registry
+    does expose a few of them as tags, which is the only supported read path we
+    found (verified on UE 5.4.4: ``ParentClass`` -> ``/Script/Engine.Actor``).
+    """
+    unreal = get_unreal()
+    tags = {}
+    try:
+        registry = unreal.AssetRegistryHelpers.get_asset_registry()
+        assets = registry.get_assets_by_package_name(asset_path) or []
+    except Exception:
+        return tags
+    data = None
+    short_name = asset_path.rsplit("/", 1)[-1]
+    for candidate in assets:
+        try:
+            if str(candidate.asset_name) == short_name:
+                data = candidate
+                break
+        except Exception:
+            continue
+    if data is None and assets:
+        data = assets[0]
+    if data is None:
+        return tags
+    try:
+        raw = dict(data.get_tags_and_values())
+    except Exception:
+        raw = {}
+    for key in ("ParentClass", "GeneratedClass", "NativeParentClass", "BlueprintType"):
+        try:
+            tags[key] = str(data.get_tag_value(key))
+        except Exception:
+            if key in raw:
+                tags[key] = str(raw[key])
+    return tags
+
+
+_KNOWN_GRAPH_NAMES = (
+    ("EventGraph", "event"),
+    ("UserConstructionScript", "function"),
+    ("AnimGraph", "anim"),
+)
+
+
+def _discover_named_graphs(blueprint, existing):
+    """Add graphs that can be found by name through BlueprintEditorLibrary.
+
+    ``UBlazeprint.UbergraphPages/FunctionGraphs/MacroGraphs`` are protected, so
+    the only way to reach a graph object from Python is ``find_graph(name)``.
+    We probe the well-known names; anything else stays undiscoverable.
+    """
+    unreal = get_unreal()
+    found = list(existing)
+    seen = set()
+    for item in found:
+        try:
+            seen.add(item.get("name"))
+        except Exception:
+            continue
+    for name, kind in _KNOWN_GRAPH_NAMES:
+        if name in seen:
+            continue
+        graph = None
+        try:
+            graph = unreal.BlueprintEditorLibrary.find_graph(blueprint, name)
+        except Exception:
+            continue
+        if graph is None:
+            continue
+        entry = {"name": name, "kind": kind}
+        try:
+            entry["nodeCount"] = len(graph.get_editor_property("nodes"))
+        except Exception:
+            entry["nodeCountAvailable"] = False
+        found.append(entry)
+        seen.add(name)
+    return found
+
+
 def _pin_type_string(pin_type):
     unreal = get_unreal()
     try:
@@ -456,6 +554,7 @@ def handle(server, params):
     # action == "query"
     data = {"blueprintPath": blueprint_path}
     structure_errors = {}
+    registry_tags = _registry_tags(blueprint_path)
 
     if "parent" in include:
         try:
@@ -463,11 +562,36 @@ def handle(server, params):
             data["parentClass"] = str(parent.get_name()) if parent else ""
         except Exception as exc:
             data["parentClass"] = ""
-            warnings.append("PARENT_CLASS_UNAVAILABLE")
             structure_errors["parent_class"] = _describe_exception(exc)
+        if not data["parentClass"]:
+            # Engine Python marks UBlueprint.ParentClass as protected; the Asset
+            # Registry tag is the supported read path (verified on 5.4.4).
+            fallback = _short_class_name(registry_tags.get("ParentClass"))
+            if fallback:
+                data["parentClass"] = fallback
+                data["parentClassSource"] = "asset-registry"
+            else:
+                warnings.append("PARENT_CLASS_UNAVAILABLE")
+
+    if registry_tags.get("GeneratedClass"):
+        data["generatedClass"] = _short_class_name(registry_tags.get("GeneratedClass"))
+    else:
+        try:
+            generated = blueprint.generated_class()
+            if generated:
+                data["generatedClass"] = str(generated.get_name())
+        except Exception as exc:
+            structure_errors["generated_class"] = _describe_exception(exc)
+
+    if registry_tags.get("BlueprintType"):
+        data["blueprintType"] = registry_tags["BlueprintType"]
 
     if "variables" in include:
         data["variables"] = _variables(blueprint)
+        if not data["variables"]:
+            # UBlueprint.NewVariables is protected in engine Python; report the
+            # reason instead of an empty list that looks like "no variables".
+            data["variablesUnavailable"] = "NEW_VARIABLES_PROTECTED_IN_ENGINE_PYTHON"
 
     if "components" in include:
         data["components"] = _components(blueprint)
@@ -475,6 +599,7 @@ def handle(server, params):
 
     events, functions, macros = _graphs(blueprint)
     graph_entries = _graph_entries(events, functions, macros)
+    graph_entries = _discover_named_graphs(blueprint, graph_entries)
 
     selected_graphs = []
     if "graphs" in include or include_nodes:
@@ -499,20 +624,24 @@ def handle(server, params):
 
     if "graphs" in include:
         data["graphs"] = graph_entries
+        if not graph_entries:
+            data["graphsUnavailable"] = "GRAPH_LISTS_PROTECTED_IN_ENGINE_PYTHON"
+        else:
+            data["graphsDiscovery"] = "known-names-only"
 
     # An "empty success" is worse than an error: callers cannot tell a blueprint
-    # with no structure from one we failed to introspect. When parent class,
-    # variables and graphs all came back empty, report what the API actually
-    # did instead of returning a hollow payload.
+    # with no structure from one we failed to introspect. Parent class and
+    # generated class now come from Asset Registry tags; if even those are
+    # missing, report what the API actually did instead of a hollow payload.
     if (
         not data.get("parentClass")
-        and not data.get("variables")
+        and not data.get("generatedClass")
         and not data.get("graphs")
     ):
         raise RpcError(
             "UNSUPPORTED",
-            "Blueprint structure introspection returned nothing for %s: the editor "
-            "Python API did not expose parent class, variables or graphs for this asset"
+            "Blueprint structure introspection returned nothing for %s: neither the "
+            "Asset Registry tags nor the editor Python API exposed any structure"
             % blueprint_path,
             {
                 "blueprintPath": blueprint_path,
