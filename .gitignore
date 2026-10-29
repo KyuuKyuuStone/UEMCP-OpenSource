@@ -55,6 +55,7 @@ baseline-logs/
 UEMCPBridge/Tests/smoke-runs/
 uemcp/tests/BASELINE-*.md
 uemcp/tests/PACKAGE-VERIFY-*.md
+uemcp/tests/ZIP-INSTALL-VERIFY-*.md
 
 # Unreal projects parked inside the repo directory by the local developer.
 # They are NOT part of this project; never commit them.
