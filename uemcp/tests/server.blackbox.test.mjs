@@ -728,6 +728,99 @@ test("bridge: hung /rpc with timeoutMs=1000 → BRIDGE_TIMEOUT phase=game_thread
   }
 });
 
+// ---------- charset=utf-8（外部报告建议项）----------
+
+test("http: /mcp JSON+error, /mcp SSE and /health content-type carry explicit charset=utf-8", async () => {
+  const home = newHome();
+  const srv = startServer(["--port", "19160", "--policy", "standard"], serverEnv(home));
+  try {
+    await waitHealth(19160);
+    const H = { "content-type": "application/json", accept: "application/json, text/event-stream" };
+
+    // /health（express res.json 路径）
+    const health = await fetch("http://127.0.0.1:19160/health");
+    assert.ok(
+      (health.headers.get("content-type") ?? "").includes("charset=utf-8"),
+      `/health content-type missing charset: ${health.headers.get("content-type")}`,
+    );
+
+    // /mcp 正常响应（SDK 1.32 默认 SSE 响应模式：JSON-RPC 帧在 event-stream 里回）
+    const init = await fetch("http://127.0.0.1:19160/mcp", {
+      method: "POST",
+      headers: H,
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "charset-test", version: "0" } },
+      }),
+    });
+    const initCt = init.headers.get("content-type") ?? "";
+    assert.ok(initCt.includes("text/event-stream") && initCt.includes("charset=utf-8"), `/mcp POST (SSE mode) content-type: ${initCt}`);
+    const sid = init.headers.get("mcp-session-id");
+    assert.ok(sid, "initialize must establish a session");
+
+    // /mcp JSON 形态（协议层 JSON 错误：Accept 缺 text/event-stream → 406 createJsonErrorResponse）
+    const json406 = await fetch("http://127.0.0.1:19160/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 2, method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "charset-test", version: "0" } },
+      }),
+    });
+    const json406Ct = json406.headers.get("content-type") ?? "";
+    assert.equal(json406.status, 406);
+    assert.ok(json406Ct.includes("application/json") && json406Ct.includes("charset=utf-8"), `/mcp JSON 406 content-type: ${json406Ct}`);
+
+    // /mcp SSE 流（text/event-stream 也要带 charset）
+    const ac = new AbortController();
+    try {
+      const sse = await fetch("http://127.0.0.1:19160/mcp", {
+        method: "GET",
+        headers: { accept: "text/event-stream", "mcp-session-id": sid },
+        signal: ac.signal,
+      });
+      const sseCt = sse.headers.get("content-type") ?? "";
+      assert.ok(sseCt.includes("text/event-stream") && sseCt.includes("charset=utf-8"), `/mcp SSE content-type: ${sseCt}`);
+    } catch (e) {
+      if ((e && e.name) !== "AbortError") throw e;
+    } finally {
+      ac.abort(); // 释放流连接
+    }
+
+    // 协议层错误（sendRpcError，未知会话 404 -32001）
+    const bad = await fetch("http://127.0.0.1:19160/mcp", {
+      method: "POST",
+      headers: { ...H, "mcp-session-id": "00000000-0000-0000-0000-000000000000" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/list", params: {} }),
+    });
+    assert.equal(bad.status, 404);
+    assert.ok(
+      (bad.headers.get("content-type") ?? "").includes("charset=utf-8"),
+      `sendRpcError 404 content-type: ${bad.headers.get("content-type")}`,
+    );
+
+    // Host 不合法 421（fetch 不能改 Host，用 node:http 原始请求）
+    await new Promise((resolve) => {
+      const req = http.request(
+        { host: "127.0.0.1", port: 19160, path: "/health", method: "GET", headers: { Host: "evil.example.com" } },
+        (res) => {
+          assert.equal(res.statusCode, 421);
+          assert.ok(
+            String(res.headers["content-type"]).includes("charset=utf-8"),
+            `421 content-type: ${res.headers["content-type"]}`,
+          );
+          res.resume();
+          res.on("end", resolve);
+        },
+      );
+      req.on("error", (e) => { assert.fail(`request error: ${e.message}`); resolve(); });
+      req.end();
+    });
+  } finally {
+    await stop(srv.proc);
+  }
+});
+
 after(async () => {
   for (const h of homes) {
     try {

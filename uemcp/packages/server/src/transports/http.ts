@@ -94,6 +94,51 @@ export function startHttp(
   const boundPort = (): number =>
     (server.address() as { port: number } | null)?.port ?? opts.port;
 
+  // —— charset 中间件（外部报告建议项，2026-10-29）——
+  // /mcp 的响应头由 SDK 传输层手写：Streamable HTTP 经 @hono/node-server 最终走
+  // outgoing.writeHead(status, header)，旧版 SSE 直接 res.writeHead(200, {...})，
+  // 均不经 express 的 res.set，Content-Type 不带 charset；/health 与 sendRpcError
+  // 走 express res.json（express 自会补 charset）。客户端侧（如 PowerShell 5.1
+  // 的 Invoke-WebRequest）在缺失 charset 时按 Latin-1 解码 UTF-8 字节，中文成乱码。
+  // 此处在最先的中间件里统一包裹 res.setHeader / res.writeHead：JSON 与 SSE 两类
+  // Content-Type 缺 charset 时补 "; charset=utf-8"，已带 charset 的原样放行（幂等）。
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    const withCharset = (type: string): string => {
+      const base = type.split(";")[0]!.trim().toLowerCase();
+      if ((base === "application/json" || base === "text/event-stream") && !/charset=/i.test(type)) {
+        return `${type}; charset=utf-8`;
+      }
+      return type;
+    };
+    const origSetHeader = res.setHeader.bind(res) as (name: string, value: string | number | readonly string[]) => unknown;
+    const origWriteHead = res.writeHead.bind(res) as (...args: unknown[]) => unknown;
+    const patched = res as unknown as {
+      setHeader: (name: string, value: string | number | readonly string[]) => unknown;
+      writeHead: (...args: unknown[]) => unknown;
+    };
+    patched.setHeader = (name, value) => {
+      if (typeof name === "string" && name.toLowerCase() === "content-type" && typeof value === "string") {
+        return origSetHeader(name, withCharset(value));
+      }
+      return origSetHeader(name, value);
+    };
+    // writeHead 兼容三种重载：[status]、[status, reason, headers]、[status, headers]
+    patched.writeHead = (...args: unknown[]) => {
+      for (const arg of args) {
+        if (arg !== null && typeof arg === "object" && !Array.isArray(arg)) {
+          const headers = arg as Record<string, unknown>;
+          for (const key of Object.keys(headers)) {
+            if (key.toLowerCase() === "content-type" && typeof headers[key] === "string") {
+              headers[key] = withCharset(headers[key] as string);
+            }
+          }
+        }
+      }
+      return origWriteHead(...args);
+    };
+    next();
+  });
+
   // —— 安全中间件（§6.2）——
   app.use((req: Request, res: Response, next: NextFunction) => {
     const remote = req.socket.remoteAddress ?? "";
