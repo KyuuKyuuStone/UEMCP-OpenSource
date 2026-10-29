@@ -7,6 +7,7 @@ The screenshot task is polled from successive Slate ticks via
 import datetime
 import glob
 import os
+import re
 import shutil
 import time
 import uuid
@@ -40,6 +41,61 @@ def _capture_dir():
     unreal = get_unreal()
     saved_dir = str(unreal.Paths.project_saved_dir())
     return os.path.join(saved_dir, "UEMCP", "captures")
+
+
+def _project_config_dir():
+    try:
+        return str(get_unreal().Paths.project_config_dir())
+    except Exception:
+        return ""
+
+
+_PIXEL_STREAMING_RE = re.compile(
+    r"(?im)^\s*DataChannelType\s*=\s*PixelStreaming\s*$"
+)
+
+
+def _render_environment():
+    """Collect renderer clues used to explain capture failures.
+
+    ``TakeHighResScreenshot(..., bForceGameView=True)`` synchronously toggles
+    the level viewport into game view before scheduling the capture.  That
+    toggle is the part that misbehaves on PixelStreaming projects (the game
+    viewport there belongs to the streaming path), so the handler never forces
+    game view for ``level_viewport`` captures.
+    """
+    env = {
+        "pixelStreaming": False,
+        "offscreen": False,
+        "commandLine": "",
+        "webApiConfig": "",
+    }
+    unreal = get_unreal()
+    try:
+        env["commandLine"] = str(unreal.SystemLibrary.get_command_line())
+    except Exception:
+        env["commandLine"] = ""
+    lowered = env["commandLine"].lower()
+    env["offscreen"] = ("-renderoffscreen" in lowered) or ("-nullrhi" in lowered)
+
+    config_path = os.path.join(_project_config_dir(), "DefaultWebAPI.ini")
+    env["webApiConfig"] = config_path
+    try:
+        if os.path.isfile(config_path):
+            with open(config_path, "r", encoding="utf-8", errors="replace") as handle:
+                env["pixelStreaming"] = bool(_PIXEL_STREAMING_RE.search(handle.read()))
+    except Exception:
+        pass
+    return env
+
+
+def _renderer_details(env):
+    return {
+        "pixelStreaming": env.get("pixelStreaming", False),
+        "offscreen": env.get("offscreen", False),
+        "commandLine": env.get("commandLine", "")[:400],
+        "webApiConfig": env.get("webApiConfig", ""),
+    }
 
 
 def _read_camera():
@@ -191,6 +247,20 @@ def handle(server, params):
             {"capability": "screenshot"},
         )
 
+    env = _render_environment()
+    if env.get("offscreen"):
+        # A headless editor has no rendered level viewport; failing fast beats
+        # waiting for a screenshot task that can never produce a frame.
+        raise RpcError(
+            "CAPABILITY_UNAVAILABLE",
+            "Viewport capture is unavailable in a headless/offscreen editor",
+            {
+                "capability": "screenshot",
+                "renderer": _renderer_details(env),
+                "suggestion": "Run the editor with a visible level viewport, or use an external screen capture tool.",
+            },
+        )
+
     unreal = get_unreal()
     capture_dir = _capture_dir()
     try:
@@ -228,8 +298,32 @@ def handle(server, params):
         )
 
     started_at = time.time()
+    started_monotonic = time.monotonic()
+    # Head-room under the caller's timeout so the structured CAPTURE_TIMEOUT
+    # wins over the dispatcher's generic BRIDGE_TIMEOUT.
+    deadline = started_monotonic + max(1.0, (timeout_ms / 1000.0) - 1.0)
+
+    # Never force game view for level_viewport: TakeHighResScreenshot toggles
+    # the viewport into game view synchronously, and that toggle is the path
+    # that stalls on PixelStreaming projects (defect report 2026-10-29).
+    force_game_view = target == "pie"
     try:
-        task = unreal.AutomationLibrary.take_high_res_screenshot(width, height, target_path)
+        task = unreal.AutomationLibrary.take_high_res_screenshot(
+            width, height, target_path, force_game_view=force_game_view
+        )
+    except TypeError:
+        # Builds without the keyword keep the legacy 3-argument behaviour.
+        try:
+            task = unreal.AutomationLibrary.take_high_res_screenshot(
+                width, height, target_path
+            )
+        except Exception as exc:
+            _restore_camera(saved_camera)
+            raise RpcError(
+                "CAPTURE_FAILED",
+                "Failed to start screenshot task: %s" % exc,
+                {"target": target, "reason": str(exc)},
+            )
     except Exception as exc:
         _restore_camera(saved_camera)
         raise RpcError(
@@ -242,13 +336,44 @@ def handle(server, params):
         raise RpcError(
             "CAPTURE_FAILED",
             "take_high_res_screenshot returned None",
-            {"target": target, "reason": "task is None"},
+            {"target": target, "reason": "task is None", "renderer": _renderer_details(env)},
         )
 
-    deadline = time.monotonic() + (timeout_ms / 1000.0)
-    state = {"finished": False}
+    state = {"finished": False, "ticks": 0}
+
+    def _capture_timeout():
+        _restore_camera(saved_camera)
+        exists = os.path.isfile(target_path)
+        try:
+            size = os.path.getsize(target_path) if exists else 0
+        except OSError:
+            size = 0
+        details = {
+            "target": target,
+            "timeoutMs": timeout_ms,
+            "waitedMs": int((time.monotonic() - started_monotonic) * 1000),
+            "ticks": state["ticks"],
+            "targetPath": target_path,
+            "fileExists": exists,
+            "fileBytes": size,
+            "forceGameView": force_game_view,
+            "renderer": _renderer_details(env),
+        }
+        if env.get("pixelStreaming"):
+            details["hint"] = (
+                "PixelStreaming is configured (DefaultWebAPI.ini DataChannelType=PixelStreaming). "
+                "The engine screenshot path may not produce new frames here; capture runs on the "
+                "editor viewport with forceGameView=false. If it keeps timing out, use an external "
+                "screen capture tool or disable PixelStreaming for the capture session."
+            )
+        return RpcError(
+            "CAPTURE_TIMEOUT",
+            "Screenshot task timed out after %d ms" % timeout_ms,
+            details,
+        )
 
     def poll():
+        state["ticks"] += 1
         if not state["finished"]:
             try:
                 done = bool(task.is_task_done())
@@ -256,12 +381,7 @@ def handle(server, params):
                 done = True
             if not done:
                 if time.monotonic() > deadline:
-                    _restore_camera(saved_camera)
-                    raise RpcError(
-                        "CAPTURE_TIMEOUT",
-                        "Screenshot task timed out",
-                        {"target": target, "timeoutMs": timeout_ms},
-                    )
+                    raise _capture_timeout()
                 return None
             state["finished"] = True
             _restore_camera(saved_camera)
@@ -315,6 +435,7 @@ def handle(server, params):
 
         data = {
             "path": finalized,
+            "isPath": True,
             "width": width,
             "height": height,
             "format": actual_format,
