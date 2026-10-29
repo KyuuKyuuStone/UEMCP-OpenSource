@@ -22,7 +22,7 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 - **本地优先**：默认只绑定 `127.0.0.1`，开箱即用，无需部署。
 - **UE 侧零编译**：纯 Python 插件，不需要 C++ 工具链；UE 侧仅依赖 Python 标准库。
 
-> 适用引擎：UE **5.4 / 5.7**（实测 5.4.4 / 5.7.4）。状态：MVP（v0.1.0），API 可能随迭代调整。
+> 适用引擎：UE **5.4 / 5.7**（实测 5.4.4 / 5.7.4）。状态：MVP（v0.1.1），API 可能随迭代调整。
 
 ---
 
@@ -83,11 +83,11 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 
 ### 下载
 
-当前版本 **v0.1.0**，三个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
+当前版本 **v0.1.1**，四个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
 
-- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/UEMCPBridge-5.4.zip>
-- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/UEMCPBridge-5.7.zip>
-- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/SHA256SUMS.txt>
+- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.1/UEMCPBridge-5.4.zip>
+- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.1/UEMCPBridge-5.7.zip>
+- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.1/SHA256SUMS.txt>
 
 安装三步：
 
@@ -137,7 +137,7 @@ curl -s http://127.0.0.1:18778/health
 
 前置：Node.js ≥ 20。该包**未发布到 npm registry**（`npm view @uemcp/server` 返回 404 属预期），只能从 Release 附件下载。
 
-1. 从最新 Release 下载 [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/uemcp-server-0.1.0.tgz)（687,534 B；SHA256 `5D85FDAE…`，完整值见 `SHA256SUMS.txt` 第三行）。
+1. 从最新 Release 下载 [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.1/uemcp-server-0.1.0.tgz)（687,534 B；SHA256 `5D85FDAE…`，完整值见 `SHA256SUMS.txt` 第三行）。
 2. 全局安装（纯本地，不访问 registry）：
 
 ```bash
@@ -304,7 +304,7 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 - **Local-first**: binds to `127.0.0.1` only by default; works out of the box, no deployment.
 - **No C++ on the UE side**: a pure Python plugin with no C++ toolchain; the UE side depends on the Python standard library only.
 
-> Engine: UE **5.4 / 5.7** (tested on 5.4.4 / 5.7.4). Status: MVP (v0.1.0); APIs may change between iterations.
+> Engine: UE **5.4 / 5.7** (tested on 5.4.4 / 5.7.4). Status: MVP (v0.1.1); APIs may change between iterations.
 
 ---
 
@@ -365,11 +365,11 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 
 ### Download
 
-Current release: **v0.1.0**, three assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
+Current release: **v0.1.1**, four assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
 
-- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/UEMCPBridge-5.4.zip>
-- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/UEMCPBridge-5.7.zip>
-- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/SHA256SUMS.txt>
+- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.1/UEMCPBridge-5.4.zip>
+- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.1/UEMCPBridge-5.7.zip>
+- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.1/SHA256SUMS.txt>
 
 Install in three steps:
 
@@ -419,7 +419,7 @@ Before pointing it at a production project, work through this list in order:
 
 Requires Node.js ≥ 20. This package is **not published to the npm registry** — `npm view @uemcp/server` returning 404 is expected; download it from the Release assets only.
 
-1. Download [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/uemcp-server-0.1.0.tgz) from the latest Release (687,534 B; SHA256 `5D85FDAE…`, full value on the third line of `SHA256SUMS.txt`).
+1. Download [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.1/uemcp-server-0.1.0.tgz) from the latest Release (687,534 B; SHA256 `5D85FDAE…`, full value on the third line of `SHA256SUMS.txt`).
 2. Install it globally (purely local, no registry access):
 
 ```bash
