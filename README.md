@@ -15,14 +15,14 @@
 
 ## 中文
 
-UEMCP 是**客户端无关**的 Unreal Engine 5.4 编辑器 MCP（Model Context Protocol）服务：用 Claude Code、Cursor 或任意 HTTP 客户端，通过标准 MCP 协议操作**当前打开的编辑器**——查询与编辑 Actor、管理关卡、搜索资产、调整材质实例参数、截取视口、查询与编译蓝图。
+UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Context Protocol）服务：用 Claude Code、Cursor 或任意 HTTP 客户端，通过标准 MCP 协议操作**当前打开的编辑器**——查询与编辑 Actor、管理关卡、搜索资产、调整材质实例参数、截取视口、查询与编译蓝图。
 
 - **客户端无关**：MCP 协议是唯一边界，不内嵌聊天 UI（Streamable HTTP / 旧版 SSE / stdio 三种传输）。
 - **仅编辑器**：直接作用于编辑器进程，不解析离线 `.uasset`，不支持打包后的运行时游戏。
 - **本地优先**：默认只绑定 `127.0.0.1`，开箱即用，无需部署。
 - **UE 侧零编译**：纯 Python 插件，不需要 C++ 工具链；UE 侧仅依赖 Python 标准库。
 
-> 适用引擎：UE **5.4.x**（5.4.4 实测）。状态：MVP（v0.1.0），API 可能随迭代调整。
+> 适用引擎：UE **5.4 / 5.7**（实测 5.4.4 / 5.7.4）。状态：MVP（v0.1.0），API 可能随迭代调整。
 
 ---
 
@@ -59,13 +59,13 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4 编辑器 MCP（Model Context 
 └────────────┬─────────────────────────────────┘
              │ HTTP JSON-RPC 2.0 + X-UEMCP-Token
              ▼
-┌──────────────────────────────────────────────┐
-│ UEMCPBridge（UE 5.4 编辑器内，纯 Python，:18778）│
-│ ThreadingHTTPServer + 游戏线程单队列          │
-└────────────┬─────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ UEMCPBridge（UE 5.4/5.7 编辑器内，纯 Python，:18778）│
+│ ThreadingHTTPServer + 游戏线程单队列                 │
+└────────────┬─────────────────────────────────────────┘
              │ unreal.* Python API（仅游戏线程）
              ▼
-        UE 5.4 编辑器（World / Actor / AssetRegistry / Viewport）
+        UE 5.4/5.7 编辑器（World / Actor / AssetRegistry / Viewport）
 ```
 
 - 桥接启动后写发现文件 `~/.uemcp/`；Server 自动发现并校验（pid/health 双重校验，陈旧文件自动跳过）。
@@ -76,7 +76,8 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4 编辑器 MCP（Model Context 
 
 ### 环境要求
 
-- Unreal Engine **5.4.x** + PythonScriptPlugin + EditorScriptingUtilities（引擎自带）
+- Unreal Engine **5.4.x** + PythonScriptPlugin + EditorScriptingUtilities（引擎自带；实测 5.4.4）
+- Unreal Engine **5.7.x** + 同上三个插件（引擎自带；实测 5.7.4）
 - Node.js **>= 20**、pnpm 11（或 corepack）
 - 无需 Python 包管理（UE 侧仅标准库）；无需 C++ 编译
 
@@ -178,7 +179,7 @@ Cursor 0.46+：
 { "mcpServers": { "uemcp": { "url": "http://127.0.0.1:18777/mcp" } } }
 ```
 
-> 注：0.46+ 的 `/mcp`（Streamable HTTP）**未实测**，若客户端改走 Streamable HTTP 再验证；旧版 SSE 端点始终可用（架构 §3.4）。
+> 注：0.46+ 的 `/mcp`（Streamable HTTP）**未实测**；需要稳定接入时可回退到旧版 `/sse`（0.45.x 实测可用，架构 §3.4）。
 
 **任意 HTTP 客户端（curl）**：
 
@@ -211,12 +212,12 @@ pnpm test         # node --test：单测 + 黑盒 36 项
 pnpm typecheck && pnpm build
 ```
 
-UE 侧自检（无需引擎的 8 个脚本 + 需 UnrealEditor-Cmd 的冒烟）见 [UEMCPBridge/README.md](UEMCPBridge/README.md) §7。测试端口约定：smoke 用 18999/19001–19008、单测用 19101–19199，避开真实服务端口 18777/18778。
+UE 侧自检（无需引擎的 11 个脚本 + 需 UnrealEditor-Cmd 的冒烟）见 [UEMCPBridge/README.md](UEMCPBridge/README.md) §7。测试端口约定：smoke 用 18999/19001–19008、单测用 19101–19199，避开真实服务端口 18777/18778。
 
 ### 目录结构
 
 ```text
-├─ UEMCPBridge/        # UE 5.4 纯 Python 插件（桥接 + 自测脚本）
+├─ UEMCPBridge/        # UE 5.4/5.7 纯 Python 插件（桥接 + 自测脚本）
 ├─ uemcp/              # MCP Server（pnpm workspace：packages/shared + packages/server）
 │  ├─ packages/shared/ # 工具名、zod Schema、错误码（@uemcp/shared）
 │  ├─ packages/server/ # CLI、传输、发现、策略、审计、10 工具（@uemcp/server）
@@ -257,14 +258,14 @@ UE 侧自检（无需引擎的 8 个脚本 + 需 UnrealEditor-Cmd 的冒烟）�
 
 ## English
 
-UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unreal Engine 5.4 editor. Point Claude Code, Cursor, or any HTTP client at it and drive **the editor that is currently open** over the standard MCP protocol: query and edit actors, manage levels, search assets, tune material-instance parameters, capture the viewport, and inspect or compile Blueprints.
+UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unreal Engine 5.4/5.7 editor. Point Claude Code, Cursor, or any HTTP client at it and drive **the editor that is currently open** over the standard MCP protocol: query and edit actors, manage levels, search assets, tune material-instance parameters, capture the viewport, and inspect or compile Blueprints.
 
 - **Client-agnostic**: MCP is the only boundary. No chat UI is embedded (Streamable HTTP, legacy SSE, and stdio transports).
 - **Editor-only**: acts on the editor process; does not parse offline `.uasset` files and does not drive packaged runtime games.
 - **Local-first**: binds to `127.0.0.1` only by default; works out of the box, no deployment.
 - **No C++ on the UE side**: a pure Python plugin with no C++ toolchain; the UE side depends on the Python standard library only.
 
-> Engine: UE **5.4.x** (tested on 5.4.4). Status: MVP (v0.1.0); APIs may change between iterations.
+> Engine: UE **5.4 / 5.7** (tested on 5.4.4 / 5.7.4). Status: MVP (v0.1.0); APIs may change between iterations.
 
 ---
 
@@ -301,13 +302,13 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 └────────────┬─────────────────────────────────┘
              │ HTTP JSON-RPC 2.0 + X-UEMCP-Token
              ▼
-┌──────────────────────────────────────────────┐
-│ UEMCPBridge (inside the UE 5.4 editor, pure Python, :18778) │
-│ ThreadingHTTPServer + single game-thread queue │
-└────────────┬─────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ UEMCPBridge (inside the UE 5.4/5.7 editor, pure Python, :18778) │
+│ ThreadingHTTPServer + single game-thread queue                  │
+└────────────┬────────────────────────────────────────────────────┘
              │ unreal.* Python API (game thread only)
              ▼
-        UE 5.4 editor (World / Actor / AssetRegistry / Viewport)
+        UE 5.4/5.7 editor (World / Actor / AssetRegistry / Viewport)
 ```
 
 - After startup the bridge writes discovery files under `~/.uemcp/`; the server discovers and validates them (pid + health double check; stale files are skipped).
@@ -318,7 +319,8 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 
 ### Requirements
 
-- Unreal Engine **5.4.x** + PythonScriptPlugin + EditorScriptingUtilities (bundled with the engine)
+- Unreal Engine **5.4.x** + PythonScriptPlugin + EditorScriptingUtilities (bundled with the engine; tested on 5.4.4)
+- Unreal Engine **5.7.x** + the same three plugins (bundled with the engine; tested on 5.7.4)
 - Node.js **>= 20**, pnpm 11 (or corepack)
 - No Python packaging on the UE side (standard library only); no C++ build
 
@@ -420,7 +422,7 @@ Cursor 0.46+:
 { "mcpServers": { "uemcp": { "url": "http://127.0.0.1:18777/mcp" } } }
 ```
 
-> Note: `/mcp` (Streamable HTTP) on 0.46+ is **not tested yet**; verify it if your client switches to Streamable HTTP. The legacy SSE endpoint is always available (architecture §3.4).
+> Note: `/mcp` (Streamable HTTP) on 0.46+ is **not tested yet**; fall back to the legacy `/sse` endpoint when you need a verified path (tested with 0.45.x, architecture §3.4).
 
 **Any HTTP client (curl)**:
 
@@ -453,12 +455,12 @@ pnpm test         # node --test: unit + black-box, 36 cases
 pnpm typecheck && pnpm build
 ```
 
-UE-side self-checks (8 scripts that need no engine, plus a commandlet smoke test) are documented in [UEMCPBridge/README.md](UEMCPBridge/README.md) §7. Test ports: 18999 and 19001–19008 for smoke, 19101–19199 for unit tests, so the real 18777/18778 ports are never touched.
+UE-side self-checks (11 scripts that need no engine, plus a commandlet smoke test) are documented in [UEMCPBridge/README.md](UEMCPBridge/README.md) §7. Test ports: 18999 and 19001–19008 for smoke, 19101–19199 for unit tests, so the real 18777/18778 ports are never touched.
 
 ### Repository layout
 
 ```text
-├─ UEMCPBridge/        # UE 5.4 pure-Python plugin (bridge + self-tests)
+├─ UEMCPBridge/        # UE 5.4/5.7 pure-Python plugin (bridge + self-tests)
 ├─ uemcp/              # MCP server (pnpm workspace: packages/shared + packages/server)
 │  ├─ packages/shared/ # tool names, zod schemas, error codes (@uemcp/shared)
 │  ├─ packages/server/ # CLI, transports, discovery, policy, audit, 10 tools (@uemcp/server)
