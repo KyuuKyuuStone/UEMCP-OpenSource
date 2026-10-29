@@ -25,6 +25,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ### Fixed
 
 - Harness could read a newer unrelated log (`cef3.log`) instead of the project log, causing a false failure.
+- `viewport.capture` no longer blocks until the server-side 45 s timeout: the bridge now bounds the capture itself, reports `CAPTURE_TIMEOUT` with render-environment diagnostics, and stops forcing the game view. Root cause confirmed as UE throttling ticks (~3 fps) while the editor window is minimized or unfocused — foreground capture was measured at 132–976 ms.
+- `blueprint.query` no longer returns an "empty success": when parent class, variables and graphs are all empty the handler raises `UNSUPPORTED` with per-property diagnostics. Reading blueprint structure still depends on engine Python exposure and remains unreliable.
+- JSON and SSE responses (`/mcp`, `/health`, error envelopes) now carry an explicit `charset=utf-8`, so clients that default to Latin-1 (e.g. PowerShell 5.1 `Invoke-WebRequest`) no longer garble non-ASCII names.
+
 
 ## [0.1.0] - 2026-10-28
 
