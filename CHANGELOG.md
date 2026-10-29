@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - GitHub Actions CI (build, typecheck, test and smoke on `windows-latest`) and issue templates for bug reports and feature requests.
 - `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md` and a pull-request template.
 - Documented known limitation: when the editor window loses focus, UE throttles ticks (about 3.1 fps in our test) and `viewport.capture` may return `CAPTURE_TIMEOUT`; keep the window foreground, raise `timeoutMs`, or retry.
+- Offline-installable server package (`uemcp-server-0.1.0.tgz`, an esbuild full bundle); the official `pnpm pack` artifact is not distributable because `@uemcp/shared` is not on the npm registry.
 
 ### Changed
 

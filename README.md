@@ -133,6 +133,28 @@ curl -s http://127.0.0.1:18778/health
 
 ### 构建与运行（Server 侧）
 
+#### 安装 Server（离线 tgz，无需 clone 仓库）
+
+前置：Node.js ≥ 20。该包**未发布到 npm registry**（`npm view @uemcp/server` 返回 404 属预期），只能从 Release 附件下载。
+
+1. 从最新 Release 下载 [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/uemcp-server-0.1.0.tgz)（687,534 B；SHA256 `5D85FDAE…`，完整值见 `SHA256SUMS.txt` 第三行）。
+2. 全局安装（纯本地，不访问 registry）：
+
+```bash
+npm install -g ./uemcp-server-0.1.0.tgz
+```
+
+3. 启动并自检：
+
+```bash
+uemcp --transport http --policy read-only
+curl -s http://127.0.0.1:18777/health   # 预期 {"ok":true,...}
+```
+
+> 该产物是 esbuild 打出的**全量 bundle**（无外部依赖），不是官方 `pnpm pack` 的产物——后者因 `workspace:*` 依赖在安装时会 404，不要引导用户使用。
+
+#### 从源码构建（开发用途）
+
 ```bash
 cd uemcp
 pnpm install
@@ -390,6 +412,28 @@ Before pointing it at a production project, work through this list in order:
 7. **Leave headroom for concurrent sessions.** The server allows 20 req/s per session and the bridge 30 req/s globally; concurrent users or batch calls may receive `RATE_LIMITED` (HTTP 429) — back off and retry.
 
 ### Build and run (server side)
+
+#### Install the server (offline tgz, no clone needed)
+
+Requires Node.js ≥ 20. This package is **not published to the npm registry** — `npm view @uemcp/server` returning 404 is expected; download it from the Release assets only.
+
+1. Download [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.0/uemcp-server-0.1.0.tgz) from the latest Release (687,534 B; SHA256 `5D85FDAE…`, full value on the third line of `SHA256SUMS.txt`).
+2. Install it globally (purely local, no registry access):
+
+```bash
+npm install -g ./uemcp-server-0.1.0.tgz
+```
+
+3. Start it and check the health endpoint:
+
+```bash
+uemcp --transport http --policy read-only
+curl -s http://127.0.0.1:18777/health   # expect {"ok":true,...}
+```
+
+> This artifact is a **full esbuild bundle** with no external dependencies — not the output of `pnpm pack`, whose `workspace:*` dependencies make it fail to install (404). Do not point users at the pnpm-pack artifact.
+
+#### Build from source (for development)
 
 ```bash
 cd uemcp
