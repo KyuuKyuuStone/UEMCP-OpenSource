@@ -1,0 +1,89 @@
+name: CI
+
+# UEMCP CI —— Windows 主验证平台（smoke 的端口/路径/临时目录语义都依赖 Windows 行为）。
+# 触发：main 直推、任意 PR、手动 workflow_dispatch。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支/PR 的旧跑取消，省 runner 时长
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: build / typecheck / test / smoke (windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: uemcp
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm 版本单一来源：从 uemcp/package.json 的 packageManager 字段读取（此处不写死，
+      # 避免 workflow 与 package.json 两处漂移）。standalone=true 安装独立 pnpm.exe，
+      # 规避 Windows PowerShell 对 pnpm.ps1 shim 的执行策略拦截。
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: uemcp/package.json
+          standalone: true
+
+      # pnpm store 缓存：由 setup-node 直接承担（cache: pnpm 需要 pnpm 先就位，
+      # 故本步必须在 pnpm/action-setup 之后；lockfile 变化时缓存键随之更新）。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: uemcp/pnpm-lock.yaml
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # ── DEF-1 回归点（ac394016）──────────────────────────────────────────────
+      # typecheck 在 build 之前不得依赖 dist：本仓库 typecheck 通过 tsconfig paths
+      # 直接指向 shared 源码（tsconfig.json），干净树 install 后裸跑也应 exit 0。
+      # 该性质不靠本步骤顺序证明（build 已先行），真正的自动化断言是
+      # tests/build-chain.test.mjs（在 pnpm test 内：临时副本剔除 node_modules/dist
+      # 实跑 install + typecheck）——此处不重复构造，仅以本注释点明契约。
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # ── DEF-2 回归点（ac394016）──────────────────────────────────────────────
+      # smoke 必须连跑两次且临时目录不增长：smoke 自身第 81 项断言已校验"本次临时
+      # HOME 在 finally 中被清理"，但单次跑证明不了"连续两次不残留"；故 CI 显式
+      # 两连跑，并在随后一个独立步骤断言 TEMP 下 uemcp-smoke-* 计数为 0。
+      - name: Smoke (run 1/2)
+        run: pnpm smoke
+
+      - name: Smoke (run 2/2)
+        run: pnpm smoke
+
+      - name: Assert no smoke temp-dir leakage (DEF-2)
+        run: |
+          $count = (Get-ChildItem $env:TEMP -Directory -Filter 'uemcp-smoke-*' -ErrorAction SilentlyContinue).Count
+          Write-Host "uemcp-smoke-* temp dirs after two smoke runs: $count"
+          if ($count -ne 0) {
+            Write-Host "::error::DEF-2 regression: uemcp-smoke-* temp dirs leaked after two smoke runs"
+            exit 1
+          }
+
+      # 失败时上传 Server 侧日志辅助排查；目录不存在（如 install 阶段失败）不算错。
+      - name: Upload server logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uemcp-server-logs
+          path: uemcp/logs/
+          if-no-files-found: ignore
