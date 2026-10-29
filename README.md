@@ -278,10 +278,12 @@ UE 侧自检（无需引擎的 11 个脚本 + 需 UnrealEditor-Cmd 的冒烟）�
 
 ### 已知限制
 
-- 蓝图节点创建/连线/删除与动画蓝图编辑**不支持**（`CAPABILITY_UNAVAILABLE`，需 P2 C++ 模块）。
+- 蓝图：节点创建/连线/删除与动画蓝图编辑**不支持**（`CAPABILITY_UNAVAILABLE`，需 P2 C++ 模块）；`blueprint.query` 的结构数据也受引擎 Python 暴露限制——`parentClass` 可能为空、`graphs` 可能为 0、`compileState` 可能为 `unknown`。目前可靠的是**触发编译**与确认查询接口可用，图结构与父类信息可能不完整。
 - PIE 运行中的 Actor 编辑**不支持**：写操作返回 `EDITOR_UNSAFE_STATE`，只读查询仍可用。
 - 本插件只作用于编辑器进程：不解析离线 `.uasset`，不操作打包后的运行时。
 - 编辑器窗口失去焦点时，UE 会降低 tick 频率（实测约 3.1 fps），`viewport.capture` 可能因拿不到新帧而返回 `CAPTURE_TIMEOUT`（HTTP 504 / `-32037` / `retryable=true`，错误契约本身是正确的）。把编辑器窗口保持在前台或可见，或增大 `timeoutMs`，或重试即可。
+- `level.control` 的 `list_dirty`：`actor.edit` 做 spawn/delete 后该关卡包仍会报脏（UE 在内存中增删即置脏，删除不会还原），但磁盘上的 `.umap` 未变（实测三个 umap 的 SHA-256 前后一致）。看到 dirty 不等于磁盘已变，是否落盘由你决定是否保存。
+- `actor.edit` 的 `delete`：`confirm: true` 只在经 MCP Server 时被强制（缺省走 elicitation 或 `--allow-destructive`）；**直连 bridge 端口不会校验 confirm**。安全门在 Server 层，别把 bridge 端口直接暴露给自定义客户端。
 
 ### License
 
@@ -558,10 +560,12 @@ UE-side self-checks (11 scripts that need no engine, plus a commandlet smoke tes
 
 ### Known limitations
 
-- Blueprint node creation, wiring, deletion and animation Blueprint editing are **not supported** (`CAPABILITY_UNAVAILABLE`; needs a P2 C++ module).
+- Blueprint: node creation, wiring, deletion and animation Blueprint editing are **not supported** (`CAPABILITY_UNAVAILABLE`; needs a P2 C++ module). `blueprint.query` structure data is also limited by what the engine's Python API exposes — `parentClass` may be empty, `graphs` may be 0 and `compileState` may be `unknown`. What works reliably today is **triggering a compile** and confirming the query endpoint answers; graph structure and parent-class details may be incomplete.
 - Actor edits inside PIE are **not supported**: write operations return `EDITOR_UNSAFE_STATE`; read-only queries still work.
 - The plugin acts on the editor process only: it does not parse offline `.uasset` files and does not operate on packaged runtimes.
 - When the editor window loses focus, UE throttles ticks (about 3.1 fps in our test), so `viewport.capture` may return `CAPTURE_TIMEOUT` (HTTP 504 / `-32037` / `retryable=true`; the error contract itself is correct). Keep the editor window foreground or visible, raise `timeoutMs`, or retry.
+- `level.control` `list_dirty`: after `actor.edit` spawns and deletes actors, the level package still reports dirty (UE marks a package dirty on in-memory add/remove and deleting does not undo it), while the `.umap` on disk is unchanged (three umaps kept identical SHA-256 before and after in our test). Dirty does not mean the file changed — whether to save is your decision.
+- `actor.edit` `delete`: `confirm: true` is enforced only when the call goes through the MCP server (otherwise elicitation or `--allow-destructive` applies). A client that talks to the **bridge port directly is never asked to confirm** — the safety gate lives in the server, so do not expose the bridge port to custom clients.
 
 ### License
 

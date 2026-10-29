@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - README Cursor note now points to the verified `/sse` fallback instead of leaving the 0.46+ `/mcp` path unexplained.
 - Test harness prefers `Saved/Logs/<ProjectName>.log` and adds an optional foreground/capture-retry assist (`-NoFocusAssist` to disable).
 - Documentation cleanup: removed the pre-implementation README draft and replaced internal session IDs and local paths in `docs/` with placeholders.
+- README known limitations now cover `list_dirty` after spawn/delete, the current `blueprint.query` data limits, and that `delete` confirmation is enforced by the server rather than the bridge.
 
 ### Fixed
 
