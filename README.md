@@ -245,6 +245,7 @@ UE 侧自检（无需引擎的 11 个脚本 + 需 UnrealEditor-Cmd 的冒烟）�
 - 蓝图节点创建/连线/删除与动画蓝图编辑**不支持**（`CAPABILITY_UNAVAILABLE`，需 P2 C++ 模块）。
 - PIE 运行中的 Actor 编辑**不支持**：写操作返回 `EDITOR_UNSAFE_STATE`，只读查询仍可用。
 - 本插件只作用于编辑器进程：不解析离线 `.uasset`，不操作打包后的运行时。
+- 编辑器窗口失去焦点时，UE 会降低 tick 频率（实测约 3.1 fps），`viewport.capture` 可能因拿不到新帧而返回 `CAPTURE_TIMEOUT`（HTTP 504 / `-32037` / `retryable=true`，错误契约本身是正确的）。把编辑器窗口保持在前台或可见，或增大 `timeoutMs`，或重试即可。
 
 ### License
 
@@ -488,6 +489,7 @@ UE-side self-checks (11 scripts that need no engine, plus a commandlet smoke tes
 - Blueprint node creation, wiring, deletion and animation Blueprint editing are **not supported** (`CAPABILITY_UNAVAILABLE`; needs a P2 C++ module).
 - Actor edits inside PIE are **not supported**: write operations return `EDITOR_UNSAFE_STATE`; read-only queries still work.
 - The plugin acts on the editor process only: it does not parse offline `.uasset` files and does not operate on packaged runtimes.
+- When the editor window loses focus, UE throttles ticks (about 3.1 fps in our test), so `viewport.capture` may return `CAPTURE_TIMEOUT` (HTTP 504 / `-32037` / `retryable=true`; the error contract itself is correct). Keep the editor window foreground or visible, raise `timeoutMs`, or retry.
 
 ### License
 

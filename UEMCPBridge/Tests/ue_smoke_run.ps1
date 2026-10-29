@@ -33,6 +33,12 @@
 .PARAMETER KeepPrepared
     With -SkipLaunch: do not clean up. The prepared project stays on disk.
 
+.PARAMETER NoFocusAssist
+    Disable the focus assist: do not bring the editor window to the foreground
+    and do not retry viewport.capture once after a CAPTURE_TIMEOUT.  Useful for
+    reproducing the background-throttling limitation (README "Known limitations").
+    By default the harness focuses the editor and retries the capture once.
+
 .PARAMETER TimeoutSeconds
     How long to wait for the bridge to answer /health (default 420).
 
@@ -44,6 +50,9 @@
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File UEMCPBridge\Tests\ue_smoke_run.ps1 -EngineVersion 5.7 -SkipLaunch
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File UEMCPBridge\Tests\ue_smoke_run.ps1 -EngineVersion 5.7 -NoFocusAssist
 #>
 [CmdletBinding()]
 param(
@@ -58,6 +67,8 @@ param(
 
     [switch]$KeepPrepared,
 
+    [switch]$NoFocusAssist,
+
     [int]$TimeoutSeconds = 420,
 
     [string]$EngineRoot = ''
@@ -71,6 +82,7 @@ $startedAt = Get-Date
 $repro = 'powershell -ExecutionPolicy Bypass -File "{0}" -EngineVersion {1}' -f $PSCommandPath, $EngineVersion
 if ($ProjectDir) { $repro += ' -ProjectDir "{0}"' -f $ProjectDir }
 if ($SkipLaunch) { $repro += ' -SkipLaunch' }
+if ($NoFocusAssist) { $repro += ' -NoFocusAssist' }
 
 if (-not $EngineRoot) { $EngineRoot = "C:\Program Files\Epic Games\UE_$EngineVersion" }
 $editorExe = Join-Path $EngineRoot 'Engine\Binaries\Win64\UnrealEditor.exe'
@@ -110,6 +122,7 @@ $state = [ordered]@{
     editorPid         = 0
     startedAt         = $startedAt.ToString('o')
     readyInSeconds    = $null
+    focusAssist       = $null
     rpc               = @()
     cleanup           = $null
     ok                = $false
@@ -276,7 +289,7 @@ try {
     }
 
     if ($null -eq $entry -or $null -eq $health -or $health.Status -ne 200) {
-        $logPath = Get-NewestEditorLog -ProjectDir $ProjectDir
+        $logPath = Get-NewestEditorLog -ProjectDir $ProjectDir -ProjectName (Split-Path -Leaf $ProjectDir)
         $tail = @()
         if ($logPath) {
             $tail = @(Get-Content -LiteralPath $logPath -Tail 40 -ErrorAction SilentlyContinue)
@@ -297,12 +310,25 @@ try {
     if (-not $token) { throw 'Discovery record has no token' }
     Write-Step ("launch: bridge ready in {0}s at {1} (pid {2})" -f $state.readyInSeconds, $url, $state.bridgePid)
 
+    # UE throttles ticks when the window is not foreground (measured ~3.1 fps),
+    # which can starve viewport.capture.  Focus the editor and allow one retry
+    # unless -NoFocusAssist was passed (ZIP-1).
+    $focusAssist = [ordered]@{ enabled = (-not $NoFocusAssist); foreground = $null; captureRetries = 0 }
+    if ($focusAssist.enabled) {
+        $focusAssist.foreground = [bool](Set-EditorForeground -Process $editorProcess)
+        Write-Step ("launch: focus assist foreground={0}" -f $focusAssist.foreground)
+        Start-Sleep -Milliseconds 500
+    } else {
+        Write-Step 'launch: focus assist disabled (-NoFocusAssist)'
+    }
+    $state.focusAssist = $focusAssist
+
     # ---------------------------------------------------------------- collect
     $step = 'collect'
     [System.IO.File]::WriteAllText((Join-Path $runDir 'health.json'), $health.Body, $script:Utf8NoBom)
     Copy-Item -LiteralPath $entry.Path -Destination (Join-Path $runDir 'discovery.json') -Force
 
-    $logPath = Get-NewestEditorLog -ProjectDir $ProjectDir
+    $logPath = Get-NewestEditorLog -ProjectDir $ProjectDir -ProjectName (Split-Path -Leaf $ProjectDir)
     if ($logPath) {
         Write-Lines -Path (Join-Path $runDir 'editor-log-path.txt') -Lines @($logPath)
         $uemcpLines = @(Select-String -LiteralPath $logPath -Pattern '\[UEMCP\]' -ErrorAction SilentlyContinue |
@@ -335,32 +361,53 @@ try {
     $index = 0
     foreach ($case in $rpcCases) {
         $index++
-        $response = Invoke-UemcpRpc -BaseUrl $url -Token $token -Method $case.Method `
-            -Params $case.Params -TimeoutSeconds 90 -Id $index
-        $record = [ordered]@{
-            index      = $index
-            method     = $case.Method
-            request    = @{ jsonrpc = '2.0'; id = $index; method = $case.Method; params = $case.Params }
-            httpStatus = $response.Status
-            durationMs = $response.DurationMs
-            response   = $response.Json
-            ok         = $false
-            error      = $null
-        }
-
-        $resultOk = ($null -ne $response.Json) -and ($response.Json.result.ok -eq $true) -and
-                    ($null -eq $response.Json.error)
-        if (-not $resultOk) {
-            $reason = 'unexpected response'
-            if ($null -ne $response.Json.error) {
-                $reason = '{0}: {1}' -f $response.Json.error.data.errorCode, $response.Json.error.message
-            } elseif ($response.Status -ne 200) {
-                $reason = "HTTP $($response.Status)"
+        # One retry for viewport.capture only: a background-throttled editor can
+        # miss the frame deadline once, and a second attempt usually succeeds.
+        $maxAttempts = 1
+        if ($focusAssist.enabled -and $case.Method -eq 'viewport.capture') { $maxAttempts = 2 }
+        $attempt = 0
+        do {
+            $attempt++
+            $response = Invoke-UemcpRpc -BaseUrl $url -Token $token -Method $case.Method `
+                -Params $case.Params -TimeoutSeconds 90 -Id $index
+            $record = [ordered]@{
+                index      = $index
+                method     = $case.Method
+                request    = @{ jsonrpc = '2.0'; id = $index; method = $case.Method; params = $case.Params }
+                httpStatus = $response.Status
+                durationMs = $response.DurationMs
+                response   = $response.Json
+                ok         = $false
+                error      = $null
             }
-            $record.error = $reason
-        } else {
-            $record.ok = $true
-        }
+
+            $resultOk = ($null -ne $response.Json) -and ($response.Json.result.ok -eq $true) -and
+                        ($null -eq $response.Json.error)
+            if (-not $resultOk) {
+                $reason = 'unexpected response'
+                if ($null -ne $response.Json.error) {
+                    $reason = '{0}: {1}' -f $response.Json.error.data.errorCode, $response.Json.error.message
+                } elseif ($response.Status -ne 200) {
+                    $reason = "HTTP $($response.Status)"
+                }
+                $record.error = $reason
+            } else {
+                $record.ok = $true
+            }
+
+            $captureTimeout = (-not $record.ok) -and ($null -ne $response.Json) -and
+                              ($null -ne $response.Json.error) -and
+                              ($response.Json.error.data.errorCode -eq 'CAPTURE_TIMEOUT')
+            if ($attempt -lt $maxAttempts -and $captureTimeout) {
+                $focusAssist.captureRetries++
+                Write-Step ("collect: viewport.capture hit CAPTURE_TIMEOUT; retrying in 2s (attempt {0}/{1})" -f
+                    $attempt, $maxAttempts)
+                Start-Sleep -Seconds 2
+                continue
+            }
+            break
+        } while ($true)
+        $record.attempt = $attempt
 
         if ($case.Method -eq 'viewport.capture' -and $record.ok) {
             $capturePath = [string]$response.Json.result.data.path

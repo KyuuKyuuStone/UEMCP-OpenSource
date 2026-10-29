@@ -263,13 +263,62 @@ function Invoke-UemcpRpc {
 }
 
 function Get-NewestEditorLog {
-    param([string]$ProjectDir)
+    param([string]$ProjectDir, [string]$ProjectName = '')
     $logDir = Join-Path $ProjectDir 'Saved\Logs'
     if (-not (Test-Path -LiteralPath $logDir)) { return $null }
+    # Prefer the project log: UE writes <ProjectName>.log and rotates the
+    # previous one to <ProjectName>-backup-*.log.  Other logs in the same
+    # folder (cef3.log, etc.) can be newer and used to win the "newest file"
+    # race, which made the harness read the wrong file (ZIP-2).
+    if (-not $ProjectName) { $ProjectName = Split-Path -Leaf $ProjectDir }
+    $expected = Join-Path $logDir ("{0}.log" -f $ProjectName)
+    if (Test-Path -LiteralPath $expected) { return $expected }
+
     $log = Get-ChildItem -LiteralPath $logDir -Filter *.log -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notmatch '-backup-' } |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($null -eq $log) { return $null }
     return $log.FullName
+}
+
+function Set-EditorForeground {
+    # Bring the editor window to the foreground (best effort, no dependencies).
+    param([System.Diagnostics.Process]$Process)
+    if ($null -eq $Process -or $Process.HasExited) { return $false }
+    try {
+        if (-not ('UemcpWin32.Native' -as [type])) {
+            Add-Type -Namespace UemcpWin32 -Name Native -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+'@ -ErrorAction Stop
+        }
+    } catch {
+        return $false
+    }
+    try {
+        $Process.Refresh()
+        $handle = $Process.MainWindowHandle
+        if ($handle -eq [IntPtr]::Zero) { return $false }
+        # SW_RESTORE = 9; the window may be minimized when the harness starts it.
+        if ([UemcpWin32.Native]::IsIconic($handle)) {
+            [UemcpWin32.Native]::ShowWindow($handle, 9) | Out-Null
+        }
+        [UemcpWin32.Native]::BringWindowToTop($handle) | Out-Null
+        # A headless caller cannot take the foreground with a bare
+        # SetForegroundWindow: Windows denies the switch and the call fails
+        # silently (measured: foreground=False in task 777d5ca1).  Injecting a
+        # single ALT keystroke (down/up) satisfies the foreground lock, which
+        # is what made the external focus assist work (task 6b466ef9, 8/8).
+        [UemcpWin32.Native]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)
+        $foreground = [UemcpWin32.Native]::SetForegroundWindow($handle)
+        [UemcpWin32.Native]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+        return $foreground
+    } catch {
+        return $false
+    }
 }
 
 function Stop-EditorProcess {
