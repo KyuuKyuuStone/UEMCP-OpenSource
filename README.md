@@ -119,6 +119,18 @@ curl -s http://127.0.0.1:18778/health
 # 预期 "app": "uemcp-bridge"，含 ueVersion / port / pid / capabilities
 ```
 
+### 在生产项目中使用
+
+接到真实工程前，按这个顺序做：
+
+1. **先备份，或确保版本控制是干净的。** 插件不会自动存盘，但编辑器里的改动会被后续保存写入工程；没有备份就不要开始。
+2. **第一轮只用只读。** 默认策略就是 `read-only`（7 个只读工具）。先用 `editor.status` / `actor.query` / `asset.search` 核对返回是否符合预期；大工程重点看 `asset.search` 的耗时与 `SEARCH_TIMEOUT`（默认 20s，可用 `searchTimeoutMs` 调大）。
+3. **写操作先 `dryRun`。** `actor.edit` 支持 `dryRun: true` 预演，确认变更清单后再真实执行；真实写入在编辑器事务内完成，**可用 `Ctrl+Z` 撤销**。
+4. **`allowWrite` 按需临时开启，用完立即关闭。** Server 用 `--policy standard`，Bridge 设 `"allowWrite": true`，两边都要开；Bridge 配置只在启动时读取，**改完立即改回 `false` 并重启编辑器**。
+5. **截图/视口操作时保持编辑器窗口在前台。** 无焦点时 UE 会把 tick 降到约 3 fps，`viewport.capture` 可能返回 `CAPTURE_TIMEOUT`；保持窗口可见，或增大 `timeoutMs`，或重试。
+6. **生产环境不要开 `allowExec` / `allowConsole`**，除非你清楚这是把编辑器控制权交出去——无沙箱，执行也不可中断。
+7. **多人/多会话并发要留余量。** Server 侧每会话 20 req/s、Bridge 全局 30 req/s；多人同时使用或批量调用可能收到 `RATE_LIMITED`（HTTP 429），退避后重试。
+
 ### 构建与运行（Server 侧）
 
 ```bash
@@ -364,6 +376,18 @@ Install in three steps:
 curl -s http://127.0.0.1:18778/health
 # expect "app": "uemcp-bridge" plus ueVersion / port / pid / capabilities
 ```
+
+### Using it on a real project
+
+Before pointing it at a production project, work through this list in order:
+
+1. **Back up first, or make sure version control is clean.** The plugin never saves on its own, but editor changes are written to the project by later saves. Do not start without a backup.
+2. **Start read-only.** The default policy is `read-only` (7 read-only tools). Check that `editor.status` / `actor.query` / `asset.search` return what you expect; on large projects watch `asset.search` latency and `SEARCH_TIMEOUT` (20 s by default, raise `searchTimeoutMs` if needed).
+3. **Rehearse writes with `dryRun`.** `actor.edit` accepts `dryRun: true`; review the planned changes before running for real. Writes run inside an editor transaction, so **`Ctrl+Z` undoes them**.
+4. **Turn `allowWrite` on only when needed, and off right after.** Enable both sides: server `--policy standard` and bridge `"allowWrite": true`. The bridge reads its settings at startup, so **set it back to `false` and restart the editor** when you are done.
+5. **Keep the editor window in the foreground for captures.** Without focus, UE throttles ticks to about 3 fps and `viewport.capture` may return `CAPTURE_TIMEOUT`; keep the window visible, raise `timeoutMs`, or retry.
+6. **Do not enable `allowExec` / `allowConsole` in production** unless you accept handing over control of the editor: there is no sandbox, and a running snippet cannot be interrupted.
+7. **Leave headroom for concurrent sessions.** The server allows 20 req/s per session and the bridge 30 req/s globally; concurrent users or batch calls may receive `RATE_LIMITED` (HTTP 429) — back off and retry.
 
 ### Build and run (server side)
 
