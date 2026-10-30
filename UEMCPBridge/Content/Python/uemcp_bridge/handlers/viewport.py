@@ -6,11 +6,13 @@ The screenshot task is polled from successive Slate ticks via
 
 import datetime
 import glob
+import hashlib
 import os
 import re
 import shutil
 import time
 import uuid
+import zlib
 
 from ..errors import RpcError
 from ..dispatcher import Done, Pending
@@ -35,6 +37,13 @@ _CAMERA_MODES = {"current", "actor", "explicit"}
 _FORMATS = {"png", "jpeg"}
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _JPEG_SIGNATURE = b"\xff\xd8\xff"
+
+# Windows-only window activation support (tests patch this flag).
+_IS_WINDOWS = os.name == "nt"
+_PARTIAL_GRACE_SECONDS = 0.5
+_STATS_MAX_ROWS = 96
+_STATS_MAX_SAMPLES = 60000
+_STATS_MAX_COLORS = 100000
 
 
 def _capture_dir():
@@ -96,6 +105,281 @@ def _renderer_details(env):
         "commandLine": env.get("commandLine", "")[:400],
         "webApiConfig": env.get("webApiConfig", ""),
     }
+
+
+def _foreground_window_info():
+    """Return ``{"hwnd", "pid"}`` for the current foreground window."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return {"hwnd": 0, "pid": None}
+    pid = wintypes.DWORD(0)
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return {"hwnd": int(hwnd), "pid": int(pid.value)}
+
+
+def _main_window_for_pid(pid):
+    """Best visible top-level window owned by ``pid``.
+
+    Prefers the engine's main frame class (``UnrealWindow``) and, among
+    candidates, the largest window.  Minimized windows report a tiny rect, so
+    size alone is not enough when a tool window is also open.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class _WindowPlacement(ctypes.Structure):
+        _fields_ = [
+            ("length", wintypes.UINT),
+            ("flags", wintypes.UINT),
+            ("showCmd", wintypes.UINT),
+            ("ptMinPosition", wintypes.POINT),
+            ("ptMaxPosition", wintypes.POINT),
+            ("rcNormalPosition", wintypes.RECT),
+        ]
+
+    user32 = ctypes.windll.user32
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def _callback(hwnd, _lparam):
+        owner = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value != pid or not user32.IsWindowVisible(hwnd):
+            return True
+        if user32.GetWindowTextLengthW(hwnd) <= 0:
+            return True
+        class_name = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, class_name, 256)
+        # Use the restored rectangle: minimized windows report a tiny current
+        # rect, which would make the real main window look like a tool window.
+        placement = _WindowPlacement()
+        placement.length = ctypes.sizeof(_WindowPlacement)
+        if not user32.GetWindowPlacement(hwnd, ctypes.byref(placement)):
+            return True
+        rect = placement.rcNormalPosition
+        area = (rect.right - rect.left) * (rect.bottom - rect.top)
+        is_main_class = 1 if class_name.value.lower().startswith("unrealwindow") else 0
+        found.append((is_main_class, area, int(hwnd)))
+        return True
+
+    user32.EnumWindows(_callback, 0)
+    if not found:
+        return 0
+    return max(found)[2]
+
+
+def _activate_window():
+    """Restore + foreground the editor window and verify the result.
+
+    Returns a dict with ``ok``/``alreadyForeground``/``unsupported`` plus the
+    observed pids so the caller can build a precise error.  SetForegroundWindow
+    is subject to the Windows foreground lock, so the result is polled for a
+    short while instead of trusting the return value.
+    """
+    info = {
+        "ok": False,
+        "alreadyForeground": False,
+        "unsupported": False,
+        "hwnd": 0,
+        "foregroundPid": None,
+        "editorPid": os.getpid(),
+    }
+    if not _IS_WINDOWS:
+        info["unsupported"] = True
+        return info
+
+    current = _foreground_window_info()
+    info["foregroundPid"] = current["pid"]
+    if current["pid"] == os.getpid():
+        info["ok"] = True
+        info["alreadyForeground"] = True
+        info["hwnd"] = current["hwnd"]
+        return info
+
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    current = _foreground_window_info()
+    info["foregroundPid"] = current["pid"]
+    # If one of our windows is foreground, restore that exact window; when
+    # minimized, Windows may still report it as foreground.  Otherwise fall
+    # back to the largest main-frame window.
+    if current["pid"] == os.getpid() and current["hwnd"]:
+        hwnd = current["hwnd"]
+    else:
+        hwnd = _main_window_for_pid(os.getpid())
+    info["hwnd"] = hwnd
+    info["windowClass"] = ""
+    if not hwnd:
+        return info
+    class_name = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(hwnd, class_name, 256)
+    info["windowClass"] = class_name.value
+
+    if current["hwnd"] == hwnd and not user32.IsIconic(hwnd):
+        info["ok"] = True
+        info["alreadyForeground"] = True
+        return info
+
+    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    user32.SetForegroundWindow(hwnd)
+    user32.BringWindowToTop(hwnd)
+
+    deadline = time.monotonic() + 1.5
+    while time.monotonic() < deadline:
+        current = _foreground_window_info()
+        info["foregroundPid"] = current["pid"]
+        if current["hwnd"] == hwnd and not user32.IsIconic(hwnd):
+            # Give the viewport a couple of frames to repaint after restore.
+            time.sleep(0.5)
+            again = _foreground_window_info()
+            info["foregroundPid"] = again["pid"]
+            if again["hwnd"] == hwnd and not user32.IsIconic(hwnd):
+                info["ok"] = True
+                return info
+        time.sleep(0.05)
+    return info
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _mtime_iso(path):
+    return (
+        datetime.datetime.fromtimestamp(
+            os.path.getmtime(path), datetime.timezone.utc
+        )
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _png_stats(path):
+    """Cheap PNG statistics: top scanlines, unfiltered, pixel-sampled.
+
+    Pure stdlib (``zlib`` + manual PNG chunk parsing).  Only 8-bit,
+    non-interlaced PNGs are decoded; ``statsAvailable`` is false otherwise.
+    ``uniqueColors`` is capped at 100000 sampled RGB triples and
+    ``nonZeroRatio`` counts sampled pixels that are not exactly black.
+    """
+    result = {
+        "statsAvailable": False,
+        "statsAlgorithm": "png-scanlines-sample-v1",
+    }
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError as exc:
+        result["statsError"] = str(exc)
+        return result
+    if not data.startswith(_PNG_SIGNATURE):
+        result["statsError"] = "not a PNG file"
+        return result
+
+    pos = 8
+    width = height = bit_depth = color_type = interlace = None
+    idat = []
+    try:
+        while pos + 8 <= len(data):
+            length = int.from_bytes(data[pos : pos + 4], "big")
+            chunk_type = data[pos + 4 : pos + 8]
+            chunk = data[pos + 8 : pos + 8 + length]
+            pos += 12 + length
+            if chunk_type == b"IHDR":
+                width = int.from_bytes(chunk[0:4], "big")
+                height = int.from_bytes(chunk[4:8], "big")
+                bit_depth = chunk[8]
+                color_type = chunk[9]
+                interlace = chunk[12] if len(chunk) > 12 else 0
+            elif chunk_type == b"IDAT":
+                idat.append(chunk)
+            elif chunk_type == b"IEND":
+                break
+        channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color_type)
+        if (
+            not width
+            or not height
+            or bit_depth != 8
+            or interlace != 0
+            or channels is None
+        ):
+            result["statsError"] = "unsupported PNG layout"
+            return result
+        raw = zlib.decompress(b"".join(idat))
+    except Exception as exc:  # noqa: BLE001 - stats must never fail the call
+        result["statsError"] = "decode failed: %s" % exc
+        return result
+
+    stride = width * channels
+    rows = min(height, _STATS_MAX_ROWS)
+    step = max(1, (width * rows) // _STATS_MAX_SAMPLES)
+    prev = bytearray(stride)
+    colors = set()
+    sampled = 0
+    non_zero = 0
+    offset = 0
+    for _y in range(rows):
+        if offset + 1 + stride > len(raw):
+            break
+        filter_type = raw[offset]
+        row = bytearray(raw[offset + 1 : offset + 1 + stride])
+        offset += 1 + stride
+        if filter_type == 1:
+            for i in range(channels, stride):
+                row[i] = (row[i] + row[i - channels]) & 0xFF
+        elif filter_type == 2:
+            for i in range(stride):
+                row[i] = (row[i] + prev[i]) & 0xFF
+        elif filter_type == 3:
+            for i in range(stride):
+                left = row[i - channels] if i >= channels else 0
+                row[i] = (row[i] + ((left + prev[i]) >> 1)) & 0xFF
+        elif filter_type == 4:
+            for i in range(stride):
+                a = row[i - channels] if i >= channels else 0
+                b = prev[i]
+                c = prev[i - channels] if i >= channels else 0
+                p = a + b - c
+                pa = abs(p - a)
+                pb = abs(p - b)
+                pc = abs(p - c)
+                predictor = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                row[i] = (row[i] + predictor) & 0xFF
+        prev = row
+        for x in range(0, width, step):
+            base = x * channels
+            if color_type in (2, 6):
+                r, g, b = row[base], row[base + 1], row[base + 2]
+            else:
+                r = g = b = row[base]
+            sampled += 1
+            if r or g or b:
+                non_zero += 1
+            if len(colors) < _STATS_MAX_COLORS:
+                colors.add((r, g, b))
+    if sampled == 0:
+        result["statsError"] = "no scanlines decoded"
+        return result
+    result.update(
+        {
+            "statsAvailable": True,
+            "uniqueColors": len(colors),
+            "nonZeroRatio": round(non_zero / float(sampled), 4),
+            "isBlack": non_zero == 0,
+            "statsSampledPixels": sampled,
+            "statsSampledRows": rows,
+        }
+    )
+    return result
 
 
 def _read_camera():
@@ -204,6 +488,7 @@ def handle(server, params):
             "camera",
             "returnMode",
             "hideEditorUI",
+            "activateWindow",
             "timeoutMs",
         },
     )
@@ -214,6 +499,7 @@ def handle(server, params):
     get_int(params, "jpegQuality", default=90, minimum=1, maximum=100)
     return_mode = get_enum(params, "returnMode", {"image", "file"}, default="image")
     get_bool(params, "hideEditorUI", default=True)
+    activate_window = get_bool(params, "activateWindow", default=False)
     timeout_ms = get_int(params, "timeoutMs", default=15000, minimum=1000, maximum=30000)
     camera = get_obj(params, "camera") or {"mode": "current"}
     mode = get_enum(camera, "mode", _CAMERA_MODES, default="current", required=True)
@@ -260,6 +546,30 @@ def handle(server, params):
                 "suggestion": "Run the editor with a visible level viewport, or use an external screen capture tool.",
             },
         )
+
+    capture_warnings = []
+    activation_info = None
+    if activate_window:
+        activation = _activate_window()
+        activation_info = dict(activation)
+        if activation.get("unsupported"):
+            capture_warnings.append(
+                "ACTIVATE_WINDOW_UNSUPPORTED: window activation is only implemented on Windows"
+            )
+        elif not activation.get("ok"):
+            raise RpcError(
+                "EDITOR_UNSAFE_STATE",
+                "Editor window could not be brought to the foreground",
+                {
+                    "reason": "window_not_foreground",
+                    "attempted": True,
+                    "editorPid": activation.get("editorPid"),
+                    "foregroundPid": activation.get("foregroundPid"),
+                    "hwnd": activation.get("hwnd"),
+                    "hint": "Bring the editor window to the front and retry, or omit activateWindow. "
+                    "A hidden/minimized editor ticks at ~3 fps and captures may time out.",
+                },
+            )
 
     unreal = get_unreal()
     capture_dir = _capture_dir()
@@ -339,7 +649,13 @@ def handle(server, params):
             {"target": target, "reason": "task is None", "renderer": _renderer_details(env)},
         )
 
-    state = {"finished": False, "ticks": 0}
+    state = {
+        "finished": False,
+        "ticks": 0,
+        "partial": False,
+        "grace": False,
+        "grace_deadline": 0.0,
+    }
 
     def _capture_timeout():
         _restore_camera(saved_camera)
@@ -353,11 +669,13 @@ def handle(server, params):
             "timeoutMs": timeout_ms,
             "waitedMs": int((time.monotonic() - started_monotonic) * 1000),
             "ticks": state["ticks"],
-            "targetPath": target_path,
+            "targetPath": os.path.abspath(target_path),
             "fileExists": exists,
             "fileBytes": size,
+            "partialGraceMs": int(_PARTIAL_GRACE_SECONDS * 1000),
             "forceGameView": force_game_view,
             "renderer": _renderer_details(env),
+            "activation": activation_info,
         }
         if env.get("pixelStreaming"):
             details["hint"] = (
@@ -380,11 +698,27 @@ def handle(server, params):
             except Exception:
                 done = True
             if not done:
-                if time.monotonic() > deadline:
+                now = time.monotonic()
+                if now <= deadline:
+                    return None
+                if not state["grace"]:
+                    state["grace"] = True
+                    state["grace_deadline"] = now + _PARTIAL_GRACE_SECONDS
+                # The engine frequently finishes the write a few dozen ms after
+                # our deadline; give it a short grace window instead of failing
+                # a capture whose file is already on disk.
+                candidate, _fallback_used = _finalize_file(target_path, started_at)
+                if candidate is not None and os.path.isfile(candidate):
+                    state["partial"] = True
+                    state["finished"] = True
+                    _restore_camera(saved_camera)
+                elif now > state["grace_deadline"]:
                     raise _capture_timeout()
-                return None
-            state["finished"] = True
-            _restore_camera(saved_camera)
+                else:
+                    return None
+            if not state["finished"]:
+                state["finished"] = True
+                _restore_camera(saved_camera)
 
         finalized, used_fallback = _finalize_file(target_path, started_at)
         if finalized is None or not os.path.isfile(finalized):
@@ -402,7 +736,12 @@ def handle(server, params):
                 {"target": target, "reason": str(exc)},
             )
 
-        warnings = []
+        warnings = list(capture_warnings)
+        if state["partial"]:
+            warnings.append(
+                "CAPTURE_PARTIAL: screenshot file appeared within the %d ms grace window"
+                % int(_PARTIAL_GRACE_SECONDS * 1000)
+            )
         if used_fallback:
             # The engine may ignore the requested path and write to
             # Saved/Screenshots instead; _finalize_file recovers the newest
@@ -433,13 +772,36 @@ def handle(server, params):
         except OSError:
             pass
 
+        try:
+            sha256 = _sha256_file(finalized)
+            mtime = _mtime_iso(finalized)
+        except OSError as exc:
+            raise RpcError(
+                "CAPTURE_FAILED",
+                "Cannot hash screenshot file: %s" % exc,
+                {"target": target, "reason": str(exc)},
+            )
+        if actual_format == "png":
+            stats = _png_stats(finalized)
+        else:
+            stats = {
+                "statsAvailable": False,
+                "statsAlgorithm": None,
+                "statsError": "statistics are only computed for PNG output",
+            }
+
         data = {
-            "path": finalized,
+            "path": os.path.abspath(finalized),
+            "targetPath": os.path.abspath(target_path),
             "isPath": True,
+            "partial": bool(state["partial"]),
             "width": width,
             "height": height,
             "format": actual_format,
             "bytes": byte_count,
+            "sha256": sha256,
+            "mtime": mtime,
+            "stats": stats,
             "capturedAt": datetime.datetime.now(datetime.timezone.utc)
             .isoformat()
             .replace("+00:00", "Z"),
