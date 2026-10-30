@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.3"
 BRIDGE_PROTOCOL = 1
 
 DEFAULT_PORT = 18778
