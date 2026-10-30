@@ -20,6 +20,7 @@ from .handlers import (
     console,
     levels,
     materials,
+    pie,
     python_exec,
     status,
 )
@@ -33,6 +34,7 @@ WRITE_ACTIONS = {
     "level.control": {"open", "save_current", "save_all", "new"},
     "material.params": {"set", "create_instance"},
     "blueprint.query": {"compile"},
+    "pie.control": {"start", "stop", "restart"},
 }
 
 
@@ -57,6 +59,7 @@ HANDLERS = {
     "console.command": console.handle,
     "python.exec": python_exec.handle,
     "blueprint.query": blueprints.handle,
+    "pie.control": pie.handle,
 }
 
 # These do not touch the unreal API and therefore bypass the game-thread queue.

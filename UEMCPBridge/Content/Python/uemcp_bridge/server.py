@@ -9,6 +9,7 @@ Endpoints (loopback only):
 
 import atexit
 import datetime
+import hashlib
 import json
 import os
 import socket
@@ -44,6 +45,84 @@ from .settings import (
 from .handlers.status import detect_capabilities
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
+
+# Plugin root: <Plugin>/Content/Python/uemcp_bridge/server.py -> <Plugin>
+_PLUGIN_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")
+)
+# Stable for the lifetime of this editor process (diagnostics only).
+_INSTANCE_ID = uuid.uuid4().hex
+_BUILD_INFO = {}
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _build_hash():
+    """Hash of every plugin Python file, computed once per process.
+
+    Files are hashed individually, sorted by relative path, then the joined
+    ``path:sha256`` lines are hashed again.  Editing any plugin source file
+    changes ``buildHash`` even when ``pluginVersion`` stays the same.
+    """
+    if "hash" in _BUILD_INFO:
+        return _BUILD_INFO["hash"]
+    python_dir = os.path.join(_PLUGIN_ROOT, "Content", "Python")
+    entries = []
+    for root, dirs, files in os.walk(python_dir):
+        dirs[:] = sorted(name for name in dirs if name != "__pycache__")
+        for name in sorted(files):
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(root, name)
+            relative = os.path.relpath(path, python_dir).replace(os.sep, "/")
+            try:
+                entries.append("%s:%s" % (relative, _sha256_file(path)))
+            except OSError:
+                continue
+    digest = hashlib.sha256("\n".join(sorted(entries)).encode("utf-8")).hexdigest()
+    _BUILD_INFO["hash"] = digest
+    return digest
+
+
+def _file_mtime_iso(path):
+    return (
+        datetime.datetime.fromtimestamp(
+            os.path.getmtime(path), datetime.timezone.utc
+        )
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _build_time():
+    if "time" in _BUILD_INFO:
+        return _BUILD_INFO["time"]
+    candidates = []
+    try:
+        candidates.extend(
+            os.path.join(_PLUGIN_ROOT, name)
+            for name in sorted(os.listdir(_PLUGIN_ROOT))
+            if name.endswith(".uplugin")
+        )
+    except OSError:
+        pass
+    candidates.append(os.path.join(_PLUGIN_ROOT, "Content", "Python", "uemcp_bridge", "__init__.py"))
+    value = None
+    for path in candidates:
+        try:
+            if os.path.isfile(path):
+                value = _file_mtime_iso(path)
+                break
+        except OSError:
+            continue
+    _BUILD_INFO["time"] = value
+    return value
 
 
 def _utc_now():
@@ -485,6 +564,10 @@ class BridgeServer(object):
             "bridgeProtocol": BRIDGE_PROTOCOL,
             "port": self.port,
             "pid": os.getpid(),
+            "instanceId": _INSTANCE_ID,
+            "buildHash": _build_hash(),
+            "buildTime": _build_time(),
+            "sourcePath": _PLUGIN_ROOT,
             "projectDir": discovery.normalize_project_dir(self.project_dir),
             "projectFile": self.project_file,
             "startedAt": self.started_at,

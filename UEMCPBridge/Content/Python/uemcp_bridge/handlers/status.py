@@ -29,6 +29,19 @@ def detect_capabilities():
     automation = getattr(unreal, "AutomationLibrary", None)
     blueprint_library = getattr(unreal, "BlueprintEditorLibrary", None)
     system_library = getattr(unreal, "SystemLibrary", None)
+    pie_control = False
+    try:
+        level = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        pie_control = (
+            level is not None
+            and hasattr(level, "editor_request_end_play")
+            and (
+                hasattr(level, "editor_play_simulate")
+                or hasattr(level, "editor_request_begin_play")
+            )
+        )
+    except Exception:
+        pie_control = False
     return {
         "python": True,
         "screenshot": automation is not None
@@ -41,6 +54,7 @@ def detect_capabilities():
         "assetRegistry": hasattr(unreal, "AssetRegistryHelpers"),
         "console": system_library is not None
         and hasattr(system_library, "execute_console_command"),
+        "pieControl": bool(pie_control),
     }
 
 
