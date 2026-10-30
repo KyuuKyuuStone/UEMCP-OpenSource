@@ -26,7 +26,7 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 
 ---
 
-### 特性（12 个工具）
+### 特性（15 个工具）
 
 | 工具 | 用途 | 默认可见 |
 |---|---|---|
@@ -40,6 +40,9 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 | `ue_blueprint` | 查询蓝图结构（父类/生成类/类型/命名图）；触发编译（变量与节点数受引擎限制，见已知限制） | 是 |
 | `ue_pie_control` | 启停 PIE：`start`/`stop`/`restart`/`status`，可选 `simulate`；**不再需要 `--allow-exec`**（写动作走 `allowWrite`） | 是（只读下仅 `status`） |
 | `ue_policy_explain` | 列出每个工具在当前策略下是否可见及原因（`server.policy` / `--allow-console` / `--allow-exec`） | 是 |
+| `ue_reflect` | 反射任意对象/关卡 Actor 上**可调用的函数清单**（名字、参数个数），替代「grep 源码才知道有哪些命令」 | 是 |
+| `ue_call_function` | **按名调用任意 `BlueprintCallable` 函数**，JSON 传参，返回其返回值（`void` 返回 `returnedVoid:true`）；通用能力，不需要使用者改自己的框架 | standard 起（需 Bridge `allowWrite`） |
+| `ue_log_query` | 按正则/级别/时间窗检索编辑器日志，返回命中行与行号；只能读本工程 `Saved/Logs/` | 是 |
 | `ue_console_command` | 执行控制台命令（白名单限制） | **默认隐藏** |
 | `ue_python_exec` | 在编辑器游戏线程执行 Python（无沙箱） | **默认隐藏** |
 
@@ -327,7 +330,7 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 
 ---
 
-### Features (12 tools)
+### Features (15 tools)
 
 | Tool | What it does | Visible by default |
 |---|---|---|
@@ -341,6 +344,9 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 | `ue_blueprint` | Inspect Blueprint structure (parent class, generated class, type, named graphs); trigger a compile (variables and node counts are engine-limited, see known limitations) | Yes |
 | `ue_pie_control` | Control Play-In-Editor: `start` / `stop` / `restart` / `status`, optional `simulate`; **no longer needs `--allow-exec`** (write actions use `allowWrite`) | Yes (read-only: `status` only) |
 | `ue_policy_explain` | List every tool's visibility under the current policy and why (`server.policy` / `--allow-console` / `--allow-exec`) | Yes |
+| `ue_reflect` | Reflect the **callable functions** exposed by any object or level actor (names, parameter counts) — replaces "grep the source to find out which commands exist" | Yes |
+| `ue_call_function` | **Call any `BlueprintCallable` function by name**, passing JSON arguments and returning its return value (`returnedVoid:true` for void functions). Generic: requires no change to your own framework | standard and above (needs bridge `allowWrite`) |
+| `ue_log_query` | Search the editor log by regex / level / time window and return matched lines with line numbers; restricted to this project's `Saved/Logs/` | Yes |
 | `ue_console_command` | Run console commands (allowlist-restricted) | **Hidden** |
 | `ue_python_exec` | Run Python on the editor game thread (no sandbox) | **Hidden** |
 
