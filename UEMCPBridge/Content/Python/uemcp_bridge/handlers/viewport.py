@@ -172,13 +172,72 @@ def _main_window_for_pid(pid):
     return max(found)[2]
 
 
-def _activate_window():
+def _win_api():
+    """Thin wrapper over the Win32 calls used by ``_activate_window``.
+
+    Kept injectable so the fast-fail decisions can be unit-tested without a
+    real window (``_activate_with_api``).
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+
+    def _foreground():
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return {"hwnd": 0, "pid": None}
+        pid = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return {"hwnd": int(hwnd), "pid": int(pid.value)}
+
+    def _class_name(hwnd):
+        buffer = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buffer, 256)
+        return buffer.value
+
+    def _any_iconic():
+        """True when any visible engine main-frame window is minimized."""
+        minimized = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def _callback(hwnd, _lparam):
+            owner = wintypes.DWORD(0)
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value != os.getpid() or not user32.IsWindowVisible(hwnd):
+                return True
+            buffer = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, buffer, 256)
+            if buffer.value.lower().startswith("unrealwindow") and user32.IsIconic(hwnd):
+                minimized.append(int(hwnd))
+                return False
+            return True
+
+        user32.EnumWindows(_callback, 0)
+        return bool(minimized)
+
+    return {
+        "foreground": _foreground,
+        "main": _main_window_for_pid,
+        "class_name": _class_name,
+        "any_iconic": _any_iconic,
+        "show": lambda hwnd, command: user32.ShowWindow(hwnd, command),
+        "set_foreground": lambda hwnd: user32.SetForegroundWindow(hwnd),
+        "bring_to_top": lambda hwnd: user32.BringWindowToTop(hwnd),
+        "is_iconic": lambda hwnd: bool(user32.IsIconic(hwnd)),
+        "sleep": time.sleep,
+    }
+
+
+def _activate_window(api=None):
     """Restore + foreground the editor window and verify the result.
 
     Returns a dict with ``ok``/``alreadyForeground``/``unsupported`` plus the
-    observed pids so the caller can build a precise error.  SetForegroundWindow
-    is subject to the Windows foreground lock, so the result is polled for a
-    short while instead of trusting the return value.
+    observed state (``hwnd``, ``foregroundPid``, ``isIconic``).  After the
+    restore + settle there is a single re-check; if the window is still
+    minimized or some other window owns the foreground, the caller raises
+    ``EDITOR_UNSAFE_STATE`` immediately instead of letting the screenshot wait
+    for its timeout.
     """
     info = {
         "ok": False,
@@ -187,61 +246,58 @@ def _activate_window():
         "hwnd": 0,
         "foregroundPid": None,
         "editorPid": os.getpid(),
+        "isIconic": False,
     }
     if not _IS_WINDOWS:
         info["unsupported"] = True
         return info
+    return _activate_with_api(api or _win_api(), info)
 
-    current = _foreground_window_info()
+
+def _activate_with_api(api, info=None):
+    info = info or {
+        "ok": False,
+        "alreadyForeground": False,
+        "unsupported": False,
+        "hwnd": 0,
+        "foregroundPid": None,
+        "editorPid": os.getpid(),
+        "isIconic": False,
+    }
+    pid = os.getpid()
+    current = api["foreground"]()
     info["foregroundPid"] = current["pid"]
-    if current["pid"] == os.getpid():
-        info["ok"] = True
-        info["alreadyForeground"] = True
-        info["hwnd"] = current["hwnd"]
-        return info
-
-    import ctypes
-
-    user32 = ctypes.windll.user32
-    current = _foreground_window_info()
-    info["foregroundPid"] = current["pid"]
-    # If one of our windows is foreground, restore that exact window; when
-    # minimized, Windows may still report it as foreground.  Otherwise fall
-    # back to the largest main-frame window.
-    if current["pid"] == os.getpid() and current["hwnd"]:
+    if current["pid"] == pid and current["hwnd"]:
         hwnd = current["hwnd"]
     else:
-        hwnd = _main_window_for_pid(os.getpid())
+        hwnd = api["main"](pid)
     info["hwnd"] = hwnd
-    info["windowClass"] = ""
     if not hwnd:
         return info
-    class_name = ctypes.create_unicode_buffer(256)
-    user32.GetClassNameW(hwnd, class_name, 256)
-    info["windowClass"] = class_name.value
+    info["windowClass"] = api["class_name"](hwnd)
 
-    if current["hwnd"] == hwnd and not user32.IsIconic(hwnd):
+    if current["hwnd"] == hwnd and not api["is_iconic"](hwnd) and not (
+        api.get("any_iconic") and api["any_iconic"]()
+    ):
         info["ok"] = True
         info["alreadyForeground"] = True
         return info
 
-    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-    user32.SetForegroundWindow(hwnd)
-    user32.BringWindowToTop(hwnd)
+    api["show"](hwnd, 9)  # SW_RESTORE
+    api["set_foreground"](hwnd)
+    api["bring_to_top"](hwnd)
+    api["sleep"](0.5)
 
-    deadline = time.monotonic() + 1.5
-    while time.monotonic() < deadline:
-        current = _foreground_window_info()
-        info["foregroundPid"] = current["pid"]
-        if current["hwnd"] == hwnd and not user32.IsIconic(hwnd):
-            # Give the viewport a couple of frames to repaint after restore.
-            time.sleep(0.5)
-            again = _foreground_window_info()
-            info["foregroundPid"] = again["pid"]
-            if again["hwnd"] == hwnd and not user32.IsIconic(hwnd):
-                info["ok"] = True
-                return info
-        time.sleep(0.05)
+    current = api["foreground"]()
+    info["foregroundPid"] = current["pid"]
+    info["isIconic"] = bool(api["is_iconic"](hwnd))
+    if api.get("any_iconic"):
+        info["isIconic"] = info["isIconic"] or bool(api["any_iconic"]())
+    if info["isIconic"] or current["hwnd"] != hwnd:
+        # Fast fail: the editor cannot be trusted to render a capture now, so
+        # do not wait for the screenshot timeout.
+        return info
+    info["ok"] = True
     return info
 
 
@@ -566,8 +622,8 @@ def handle(server, params):
                     "editorPid": activation.get("editorPid"),
                     "foregroundPid": activation.get("foregroundPid"),
                     "hwnd": activation.get("hwnd"),
-                    "hint": "Bring the editor window to the front and retry, or omit activateWindow. "
-                    "A hidden/minimized editor ticks at ~3 fps and captures may time out.",
+                    "isIconic": bool(activation.get("isIconic", False)),
+                    "hint": "编辑器窗口未能置前/仍在最小化，请手动恢复窗口后重试，或传 activateWindow=false 并自行保证前台。",
                 },
             )
 

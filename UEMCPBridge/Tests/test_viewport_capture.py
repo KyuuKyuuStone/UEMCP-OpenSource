@@ -130,6 +130,56 @@ def drive(pending, limit=600):
     raise AssertionError("pending job did not finish")
 
 
+class FakeApi(object):
+    """Deterministic replacement for the Win32 calls in _activate_with_api."""
+
+    def __init__(self, hwnd=100, iconic=False, iconic_after=None, fg_before=None, fg_after=None, other_iconic=False):
+        self.hwnd = hwnd
+        self.pid = os.getpid()
+        self.iconic = iconic
+        self.iconic_after = iconic if iconic_after is None else iconic_after
+        self.other_iconic = other_iconic
+        self.fg_before = fg_before or {"hwnd": 0, "pid": 999}
+        self.fg_after = fg_after if fg_after is not None else {"hwnd": hwnd, "pid": self.pid}
+        self.calls = []
+        self.foreground_calls = 0
+
+    def foreground(self):
+        self.foreground_calls += 1
+        return self.fg_before if self.foreground_calls == 1 else self.fg_after
+
+    def main(self, pid):
+        return self.hwnd
+
+    def class_name(self, hwnd):
+        return "UnrealWindow"
+
+    def show(self, hwnd, command):
+        self.calls.append(("show", hwnd, command))
+        self.iconic = self.iconic_after
+
+    def set_foreground(self, hwnd):
+        self.calls.append(("set_foreground", hwnd))
+
+    def bring_to_top(self, hwnd):
+        self.calls.append(("bring_to_top", hwnd))
+
+    def is_iconic(self, hwnd):
+        return self.iconic
+
+    def sleep(self, seconds):
+        self.calls.append(("sleep", seconds))
+
+    def any_iconic(self):
+        return self.other_iconic
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+
 def base_params(**extra):
     params = {
         "target": "level_viewport",
@@ -285,11 +335,71 @@ def main():
         else:
             raise AssertionError("expected INVALID_ARGUMENT")
 
+    def activation_iconic_fails_fast():
+        api = FakeApi(iconic=True, iconic_after=True)
+        info = viewport._activate_with_api(api)
+        assert info["ok"] is False, info
+        assert info["isIconic"] is True, info
+        assert ("sleep", 0.5) in api.calls, api.calls
+
+    def activation_not_foreground_fails_fast():
+        api = FakeApi(iconic=False, iconic_after=False, fg_after={"hwnd": 777, "pid": 4242})
+        info = viewport._activate_with_api(api)
+        assert info["ok"] is False, info
+        assert info["isIconic"] is False, info
+        assert info["foregroundPid"] == 4242, info
+
+    def activation_restore_succeeds():
+        api = FakeApi(iconic=True, iconic_after=False)
+        info = viewport._activate_with_api(api)
+        assert info["ok"] is True, info
+        assert info["isIconic"] is False, info
+
+    def activation_already_foreground():
+        api = FakeApi(iconic=False, fg_before={"hwnd": 100, "pid": os.getpid()})
+        info = viewport._activate_with_api(api)
+        assert info["ok"] is True, info
+        assert info["alreadyForeground"] is True, info
+        assert not any(step[0] == "show" for step in api.calls), api.calls
+
+    def activation_other_window_iconic_fails_fast():
+        api = FakeApi(iconic=False, other_iconic=True, fg_before={"hwnd": 100, "pid": os.getpid()})
+        info = viewport._activate_with_api(api)
+        assert info["ok"] is False, info
+        assert info["isIconic"] is True, info
+
+    def handler_iconic_fast_fail():
+        reset()
+        viewport._activate_window = lambda: {
+            "ok": False,
+            "alreadyForeground": False,
+            "unsupported": False,
+            "hwnd": 123,
+            "foregroundPid": 999,
+            "editorPid": os.getpid(),
+            "isIconic": True,
+        }
+        try:
+            call(base_params(activateWindow=True, timeoutMs=20000))
+        except RpcError as exc:
+            assert exc.code == "EDITOR_UNSAFE_STATE", exc.code
+            assert exc.details.get("reason") == "window_not_foreground", exc.details
+            assert exc.details.get("isIconic") is True, exc.details
+        else:
+            raise AssertionError("expected EDITOR_UNSAFE_STATE")
+        assert CALLS == [], CALLS
+
     check("success_payload", success_payload)
     check("black_stats", black_stats)
     check("activate_ok", activate_ok)
     check("activate_fail", activate_fail)
     check("activate_unsupported", activate_unsupported)
+    check("activation_iconic_fails_fast", activation_iconic_fails_fast)
+    check("activation_not_foreground_fails_fast", activation_not_foreground_fails_fast)
+    check("activation_restore_succeeds", activation_restore_succeeds)
+    check("activation_already_foreground", activation_already_foreground)
+    check("activation_other_window_iconic_fails_fast", activation_other_window_iconic_fails_fast)
+    check("handler_iconic_fast_fail", handler_iconic_fast_fail)
     check("timeout_partial", timeout_partial)
     check("timeout_no_file", timeout_no_file)
     check("invalid_activate", invalid_activate)
