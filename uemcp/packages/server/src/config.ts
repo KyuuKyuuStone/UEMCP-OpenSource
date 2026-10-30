@@ -16,6 +16,8 @@ export interface ServerOptions {
   disableLegacySse: boolean;
   sessionTtlMs: number;
   sessionSweepMs: number;
+  /** 会话池上限（--max-sessions / UEMCP_MAX_SESSIONS，默认 32；仅供测试与运维调小） */
+  maxSessions: number;
   auditDir?: string;
 }
 
@@ -36,6 +38,7 @@ const KNOWN_ARGS = new Set([
   "--disable-legacy-sse",
   "--session-ttl-ms",
   "--session-sweep-ms",
+  "--max-sessions",
 ]);
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
@@ -116,6 +119,14 @@ export function loadConfig(argv: string[]): ServerOptions {
     sessionSweepMs: intOr(
       typeof args["--session-sweep-ms"] === "string" ? args["--session-sweep-ms"] : undefined,
       intOr(env.UEMCP_SESSION_SWEEP_MS, 60 * 1000),
+    ),
+    // P1-5：会话池上限可配（默认 32 不变；仅供测试/运维调小，下限 1）
+    maxSessions: Math.max(
+      1,
+      intOr(
+        typeof args["--max-sessions"] === "string" ? args["--max-sessions"] : undefined,
+        intOr(env.UEMCP_MAX_SESSIONS, 32),
+      ),
     ),
     auditDir: env.UEMCP_AUDIT_DIR ?? undefined,
   };

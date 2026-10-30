@@ -29,7 +29,6 @@ import type { ServerOptions } from "../config.js";
 import type { Logger } from "../logger.js";
 import type { Audit } from "../audit.js";
 
-const MAX_SESSIONS = 32;
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const KNOWN_METHODS = new Set([
   "initialize",
@@ -58,7 +57,13 @@ function rateAllow(key: string): boolean {
 }
 
 type SessionEntry =
-  | { kind: "streamable"; transport: StreamableHTTPServerTransport; lastSeen: number }
+  | {
+      kind: "streamable";
+      transport: StreamableHTTPServerTransport;
+      lastSeen: number;
+      /** 是否有未关闭的 standalone GET /mcp SSE 流（LRU 逐出时跳过这类活跃流会话） */
+      sseOpen?: boolean;
+    }
   | {
       kind: "legacy";
       transport: SSEServerTransport;
@@ -90,6 +95,54 @@ export function startHttp(
   const startedAt = Date.now();
   const server = new Server(app);
   app.disable("x-powered-by");
+
+  // —— 会话池满仓的 LRU 逐出（P1-5）——
+  // 逐出对象：streamable 会话里 lastSeen 最老的一个；两类会话不参与逐出：
+  //   1) legacy（旧版 /sse）——它的 SSE 连接是长活流，只有连接断开（onclose）才会出 map，
+  //      在 map 里即活跃；
+  //   2) streamable 但 sseOpen=true ——有未关闭的 standalone GET /mcp SSE 流。
+  // 优先逐出「裸 POST 会话」的理由：这类会话没有任何在途响应/流，transport.close()
+  // 不会打断任何客户端正在读取的数据；SSE 活流被逐出会立刻表现为客户端读到半截事件流。
+  // 若全部会话都持活跃流（无可逐出对象），才返回 429 并带 retryAfterMs / sessions 现值。
+  const tryEvictOldestIdle = (): string | null => {
+    let victimId: string | null = null;
+    let victimLastSeen = Number.POSITIVE_INFINITY;
+    for (const [id, e] of sessions) {
+      if (e.kind === "legacy") continue;
+      if (e.kind === "streamable" && e.sseOpen) continue;
+      if (e.lastSeen < victimLastSeen) {
+        victimLastSeen = e.lastSeen;
+        victimId = id;
+      }
+    }
+    if (victimId === null) return null;
+    const victim = sessions.get(victimId)!;
+    sessions.delete(victimId);
+    rateBuckets.delete(victimId);
+    log.info("session_evicted", {
+      sessionId: victimId,
+      kind: victim.kind,
+      reason: "pool_full_lru",
+      idleMs: Date.now() - victimLastSeen,
+    });
+    void victim.transport.close().catch(() => {});
+    return victimId;
+  };
+
+  const poolFull429 = (res: Response): void => {
+    sendRpcError(
+      res,
+      429,
+      -32012,
+      "RATE_LIMITED",
+      `Too many concurrent sessions (max ${opts.maxSessions}); all sessions hold active SSE streams`,
+      {
+        retryAfterMs: opts.sessionSweepMs,
+        sessions: sessions.size,
+        maxSessions: opts.maxSessions,
+      },
+    );
+  };
 
   const boundPort = (): number =>
     (server.address() as { port: number } | null)?.port ?? opts.port;
@@ -279,10 +332,30 @@ export function startHttp(
         sendRpcError(res, 400, -32600, "INVALID_REQUEST", "Missing session: initialize required");
         return;
       }
-      if (sessions.size >= MAX_SESSIONS) {
-        sendRpcError(res, 429, -32012, "RATE_LIMITED", "Too many concurrent sessions (max 32)");
-        return;
+      if (sessions.size >= opts.maxSessions) {
+        // 满仓：先尝试 LRU 逐出（P1-5），无可逐出对象才 429
+        if (tryEvictOldestIdle() === null) {
+          poolFull429(res);
+          return;
+        }
       }
+      // 失效可预期（P1-5）：initialize 响应头声明会话空闲 TTL（毫秒）。
+      // 客户端收到 404 -32001 时应重新 initialize（data.hint=reinitialize）。
+      const expiresHeader = "Mcp-Session-Expires-In-Ms";
+      const origInitWriteHead = res.writeHead.bind(res) as (...args: unknown[]) => unknown;
+      (res as unknown as { writeHead: (...args: unknown[]) => unknown }).writeHead = (...args: unknown[]) => {
+        for (const arg of args) {
+          if (arg !== null && typeof arg === "object" && !Array.isArray(arg)) {
+            const headers = arg as Record<string, unknown>;
+            const ctKey = Object.keys(headers).find((k) => k.toLowerCase() === "content-type");
+            if (ctKey !== undefined) {
+              headers[expiresHeader] = String(opts.sessionTtlMs);
+              break;
+            }
+          }
+        }
+        return origInitWriteHead(...args);
+      };
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
@@ -302,7 +375,10 @@ export function startHttp(
     }
     const entry = sessions.get(sid);
     if (!entry || entry.kind !== "streamable") {
-      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found");
+      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found", {
+        hint: "reinitialize",
+        ttlMs: opts.sessionTtlMs,
+      });
       return;
     }
     if (!rateAllow(sid)) {
@@ -317,10 +393,20 @@ export function startHttp(
     const sid = req.header("mcp-session-id") ?? "";
     const entry = sessions.get(sid);
     if (!entry || entry.kind !== "streamable") {
-      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found");
+      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found", {
+        hint: "reinitialize",
+        ttlMs: opts.sessionTtlMs,
+      });
       return;
     }
     entry.lastSeen = Date.now();
+    // standalone SSE 流标记：开启期间该会话不参与 LRU 逐出，连接关闭后解除
+    if (entry.kind === "streamable") {
+      entry.sseOpen = true;
+      res.on("close", () => {
+        entry.sseOpen = false;
+      });
+    }
     void entry.transport.handleRequest(req, res).catch(() => {
       if (!res.headersSent) sendRpcError(res, 500, -32603, "INTERNAL", "GET /mcp failed");
     });
@@ -330,7 +416,10 @@ export function startHttp(
     const sid = req.header("mcp-session-id") ?? "";
     const entry = sessions.get(sid);
     if (!entry || entry.kind !== "streamable") {
-      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found");
+      sendRpcError(res, 404, -32001, "SESSION_NOT_FOUND", "Session not found", {
+        hint: "reinitialize",
+        ttlMs: opts.sessionTtlMs,
+      });
       return;
     }
     await entry.transport.close();
@@ -342,9 +431,12 @@ export function startHttp(
   // —— 旧版 SSE：/sse + /messages（§3.4）——
   if (!opts.disableLegacySse) {
     app.get("/sse", asyncHandler(async (_req: Request, res: Response) => {
-      if (sessions.size >= MAX_SESSIONS) {
-        sendRpcError(res, 429, -32012, "RATE_LIMITED", "Too many concurrent sessions (max 32)");
-        return;
+      if (sessions.size >= opts.maxSessions) {
+        // 满仓：与 /mcp 相同的 LRU 逐出口径（legacy 会话本身是活跃流，不会被选为逐出对象）
+        if (tryEvictOldestIdle() === null) {
+          poolFull429(res);
+          return;
+        }
       }
       const transport = new SSEServerTransport("/messages", res);
       sessions.set(transport.sessionId, {
@@ -472,6 +564,7 @@ export function sendRpcError(
   jsonRpcCode: number,
   errorCode: string,
   message: string,
+  extraData?: Record<string, unknown>,
 ): void {
   if (res.headersSent) {
     res.destroy();
@@ -483,7 +576,7 @@ export function sendRpcError(
     error: {
       code: jsonRpcCode,
       message,
-      data: { errorCode },
+      data: { errorCode, ...(extraData ?? {}) },
     },
   });
 }

@@ -823,6 +823,161 @@ test("http: /mcp JSON+error, /mcp SSE and /health content-type carry explicit ch
   }
 });
 
+// ---------- 会话池加固（P1-5）：满仓 LRU 逐出 + 失效可预期 ----------
+
+const initializeOn = async (port, id, headers = {}) => {
+  const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+    body: JSON.stringify({
+      jsonrpc: "2.0", id, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "pool-test", version: "0" } },
+    }),
+  });
+  return res;
+};
+
+test("sessions: maxSessions=2 LRU-evicts the oldest idle session — 3 initializes all succeed, first sid 404s with hint+ttlMs and expires header", async () => {
+  const home = newHome();
+  const srv = startServer(["--port", "19165", "--policy", "standard", "--max-sessions", "2"], serverEnv(home));
+  try {
+    await waitHealth(19165);
+    const init1 = await initializeOn(19165, 1);
+    const sid1 = init1.headers.get("mcp-session-id");
+    const init2 = await initializeOn(19165, 2);
+    const sid2 = init2.headers.get("mcp-session-id");
+    const init3 = await initializeOn(19165, 3);
+    const sid3 = init3.headers.get("mcp-session-id");
+    assert.ok(sid1 && sid2 && sid3, "all three initializes must succeed (no 429 under LRU eviction)");
+    assert.notEqual(sid1, sid2); assert.notEqual(sid2, sid3);
+
+    // initialize 响应头声明空闲 TTL（默认 30min = 1800000ms）
+    assert.equal(init3.headers.get("mcp-session-expires-in-ms"), String(30 * 60 * 1000));
+
+    // 最老的 sid1 被逐出 → 404 -32001 + data.hint/ttlMs（自愈契约）
+    const gone = await fetch(`http://127.0.0.1:19165/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sid1 },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "tools/list", params: {} }),
+    });
+    const goneBody = await gone.json();
+    assert.equal(gone.status, 404);
+    assert.equal(goneBody?.error?.code, -32001);
+    assert.equal(goneBody?.error?.data?.errorCode, "SESSION_NOT_FOUND");
+    assert.equal(goneBody?.error?.data?.hint, "reinitialize");
+    assert.equal(goneBody?.error?.data?.ttlMs, 30 * 60 * 1000);
+
+    // 幸存者仍可用：sid2（较新）与 sid3
+    const list2 = await fetch(`http://127.0.0.1:19165/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sid2 },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/list", params: {} }),
+    });
+    assert.equal(list2.status, 200);
+    const list3 = await fetch(`http://127.0.0.1:19165/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sid3 },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 12, method: "tools/list", params: {} }),
+    });
+    assert.equal(list3.status, 200);
+  } finally {
+    await stop(srv.proc);
+  }
+});
+
+test("sessions: eviction prefers bare-POST sessions over live SSE sessions; a pool of live SSE streams returns 429 with retryAfterMs", async () => {
+  const home = newHome();
+  const srv = startServer(["--port", "19166", "--policy", "standard", "--max-sessions", "2"], serverEnv(home));
+  const aborts = [];
+  try {
+    await waitHealth(19166);
+    // A：initialize + 打开 standalone GET /mcp SSE 流（活跃流会话）
+    const initA = await initializeOn(19166, 1);
+    const sidA = initA.headers.get("mcp-session-id");
+    const acA = new AbortController();
+    aborts.push(acA);
+    const sseA = await fetch(`http://127.0.0.1:19166/mcp`, {
+      method: "GET",
+      headers: { accept: "text/event-stream", "mcp-session-id": sidA },
+      signal: acA.signal,
+    });
+    assert.equal(sseA.status, 200, "standalone SSE stream must open");
+    // B：裸 POST 会话（无任何流）
+    const initB = await initializeOn(19166, 2);
+    const sidB = initB.headers.get("mcp-session-id");
+    // C：满仓 → 逐出对象必须是 B（裸 POST），而不是持活跃流的 A
+    const initC = await initializeOn(19166, 3);
+    const sidC = initC.headers.get("mcp-session-id");
+    assert.ok(sidC, "initC must succeed by evicting the bare-POST session B");
+    const goneB = await fetch(`http://127.0.0.1:19166/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sidB },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "tools/list", params: {} }),
+    });
+    assert.equal(goneB.status, 404, "evicted session must be B (bare-POST), not the SSE session A");    const aliveA = await fetch(`http://127.0.0.1:19166/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sidA },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/list", params: {} }),
+    });
+    assert.equal(aliveA.status, 200, "the live-SSE session A must survive eviction");
+
+    // C 上也开 SSE → 两个会话都持活跃流 → 再 initialize 只能 429（带 retryAfterMs / sessions / maxSessions）
+    const acC = new AbortController();
+    aborts.push(acC);
+    const sseC = await fetch(`http://127.0.0.1:19166/mcp`, {
+      method: "GET",
+      headers: { accept: "text/event-stream", "mcp-session-id": sidC },
+      signal: acC.signal,
+    });
+    assert.equal(sseC.status, 200);
+    const initD = await initializeOn(19166, 4);
+    assert.equal(initD.status, 429);
+    const initDBody = await initD.json();
+    assert.equal(initDBody?.error?.code, -32012);
+    assert.equal(initDBody?.error?.data?.errorCode, "RATE_LIMITED");
+    assert.equal(initDBody?.error?.data?.sessions, 2, "429 body must carry the current pool size");
+    assert.equal(initDBody?.error?.data?.maxSessions, 2);
+    assert.equal(typeof initDBody?.error?.data?.retryAfterMs, "number");
+    assert.ok(initDBody.error.data.retryAfterMs > 0);
+
+    // A 仍然存活（从未被逐出）
+    const aliveA2 = await fetch(`http://127.0.0.1:19166/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sidA },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 12, method: "tools/list", params: {} }),
+    });
+    assert.equal(aliveA2.status, 200);
+  } finally {
+    for (const ac of aborts) ac.abort(); // 关闭 SSE 流连接
+    await stop(srv.proc);
+  }
+});
+
+test("sessions: UEMCP_MAX_SESSIONS env is honored like --max-sessions (C. configurability)", async () => {
+  const home = newHome();
+  const srv = startServer(["--port", "19167", "--policy", "standard"], serverEnv(home, { UEMCP_MAX_SESSIONS: "2" }));
+  try {
+    await waitHealth(19167);
+    const i1 = await initializeOn(19167, 1);
+    const sid1 = i1.headers.get("mcp-session-id");
+    const i2 = await initializeOn(19167, 2);
+    const sid2 = i2.headers.get("mcp-session-id");
+    const i3 = await initializeOn(19167, 3);
+    const sid3 = i3.headers.get("mcp-session-id");
+    assert.ok(sid1 && sid2 && sid3, "env-configured cap=2 must LRU-evict, not 429");
+    const gone = await fetch(`http://127.0.0.1:19167/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sid1 },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "tools/list", params: {} }),
+    });
+    assert.equal(gone.status, 404);
+    const goneBody = await gone.json();
+    assert.equal(goneBody?.error?.data?.hint, "reinitialize");
+  } finally {
+    await stop(srv.proc);
+  }
+});
+
 after(async () => {
   for (const h of homes) {
     try {
