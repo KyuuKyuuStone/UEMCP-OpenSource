@@ -11,4 +11,5 @@ export * from "./schemas/viewport.js";
 export * from "./schemas/console.js";
 export * from "./schemas/python.js";
 export * from "./schemas/blueprints.js";
+export * from "./schemas/pie.js";
 export * from "./schemas/outputs.js";

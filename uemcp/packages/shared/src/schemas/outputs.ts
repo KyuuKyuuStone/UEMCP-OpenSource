@@ -258,6 +258,49 @@ const BlueprintData = looseObject({
 
 export const BlueprintOutput = outputUnion(BlueprintData);
 
+// ---------- ue_pie_control（§pie.control；data 形态与 Bridge 契约对齐） ----------
+
+const PieControlData = looseObject({
+  action: z.enum(["start", "stop", "restart", "status"]).optional(),
+  isPieRunning: z.boolean().optional(),
+  isSimulating: z.boolean().optional(),
+  world: z.string().nullable().optional(),
+  startedAt: z.string().nullable().optional(),
+  durationMs: z.number().optional(),
+});
+
+export const PieControlOutput = outputUnion(PieControlData);
+
+// ---------- ue_policy_explain（纯服务端信息，data 为可见性矩阵 + bridge 状态） ----------
+
+const PolicyExplainData = looseObject({
+  mode: z.enum(["read-only", "standard", "full"]).optional(),
+  allowDestructive: z.boolean().optional(),
+  allowConsole: z.boolean().optional(),
+  allowExec: z.boolean().optional(),
+  tools: z
+    .array(
+      looseObject({
+        name: z.string().optional(),
+        visible: z.boolean().optional(),
+        gate: z.string().optional(),
+        reason: z.string().optional(),
+        allowedActions: z.array(z.string()).optional(),
+      }),
+    )
+    .optional(),
+  bridge: looseObject({
+    connected: z.boolean().optional(),
+    url: z.string().optional(),
+    ueVersion: z.string().optional(),
+    pluginVersion: z.string().optional(),
+    projectDir: z.string().optional(),
+    note: z.string().optional(),
+  }).optional(),
+});
+
+export const PolicyExplainOutput = outputUnion(PolicyExplainData);
+
 /** 全目录 data schema（供 Server 侧构造 MCP 规范要求的根层级 type:"object" outputSchema，
  *  见 packages/server/src/mcp/outputSchema.ts；新增工具缺 data schema 会编译失败） */
 export const TOOL_OUTPUT_DATA_SCHEMAS: Record<ToolName, z.ZodTypeAny> = {
@@ -271,6 +314,8 @@ export const TOOL_OUTPUT_DATA_SCHEMAS: Record<ToolName, z.ZodTypeAny> = {
   ue_console_command: ConsoleCommandData,
   ue_python_exec: PythonExecData,
   ue_blueprint: BlueprintData,
+  ue_pie_control: PieControlData,
+  ue_policy_explain: PolicyExplainData,
 };
 
 /** 全目录 outputSchema（成功/失败双形态 union，parse 级真值供测试使用）。

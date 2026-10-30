@@ -40,6 +40,8 @@ const flags = {
   dirty: args.has("--dirty"),
 };
 
+const pieState = { running: false, simulating: false, startedAt: null };
+
 const CONSOLE_DENIED = ["quit", "exit", "restart", "shutdown", "reconnect", "open", "exec", "py", "python", "delete", "rm", "crash", "bugit"];
 const CONSOLE_ALLOW = ["stat", "show", "r.", "sg.", "viewmode", "log", "help", "dumpticks", "obj", "memreport", "camera"];
 
@@ -197,8 +199,29 @@ function dispatch(method, params, meta = {}) {
       }
       return { __err: rpcErrTemplate("INVALID_ARGUMENT", -32602, `Unknown action: ${action}`) };
     }
-    case "viewport.capture": {
-      if (params.target === "pie")
+    case "pie.control": {
+      const action = params.action ?? "status";
+      if (!["start", "stop", "restart", "status"].includes(action))
+        return { __err: rpcErrTemplate("INVALID_ARGUMENT", -32602, `Unknown action: ${action}`) };
+      if (action === "start" || action === "restart") {
+        pieState.running = true;
+        pieState.simulating = params.simulate === true;
+        pieState.startedAt = new Date().toISOString();
+      } else if (action === "stop") {
+        pieState.running = false;
+        pieState.simulating = false;
+        pieState.startedAt = null;
+      }
+      return ok({
+        action,
+        isPieRunning: pieState.running,
+        isSimulating: pieState.simulating,
+        world: pieState.running ? "/Temp/UEDPIE_0_L_TestUEMCP" : null,
+        startedAt: pieState.startedAt,
+        durationMs: 0,
+      });
+    }
+    case "viewport.capture": {      if (params.target === "pie")
         return { __err: rpcErrTemplate("PIE_NOT_RUNNING", -32038, "PIE is not running", { target: "pie" }) };
       // 写真实文件供 Server 端读取编码（当前桥接契约：只返回 path，不返回 base64）
       const capDir = join(home, "captures");

@@ -43,5 +43,13 @@ export function toolAnnotations(tool: ToolName, mode: PolicyMode): ToolAnnotatio
       return ro
         ? { title: "Blueprint Query", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false }
         : { title: "Blueprint Query / Compile", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+    case "ue_pie_control":
+      // 契约（2026-10-30）：readOnlyHint=false / destructiveHint=false / idempotentHint=false；
+      // read-only 下仅剩 status，与混合工具口径一致 readOnlyHint=true。
+      return ro
+        ? { title: "PIE Control (status only)", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+        : { title: "PIE Control", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+    case "ue_policy_explain":
+      return { title: "Explain Policy & Tool Visibility", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   }
 }

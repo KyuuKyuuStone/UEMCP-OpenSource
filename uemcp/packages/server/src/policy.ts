@@ -6,6 +6,7 @@ import {
   READ_ONLY_BLUEPRINT_ACTIONS,
   READ_ONLY_LEVEL_ACTIONS,
   READ_ONLY_MATERIAL_ACTIONS,
+  READ_ONLY_PIE_ACTIONS,
 } from "@uemcp/shared";
 
 export interface PolicyState {
@@ -27,6 +28,10 @@ export function isToolVisible(tool: ToolName, p: PolicyState): boolean {
     case "ue_material_params":
     case "ue_blueprint":
       return true; // P0/P1 混合工具恒注册（read-only 收窄 Schema）
+    case "ue_pie_control":
+      return true; // 恒注册（read-only 收窄为 status；写动作另有 policy/allowWrite 双门）
+    case "ue_policy_explain":
+      return true; // 纯只读信息工具恒可见（无副作用、无 RPC）
     case "ue_actor_edit":
       return p.mode !== "read-only"; // P1：read-only 不注册
     case "ue_console_command":
@@ -51,6 +56,8 @@ export function narrowedActions(
       return READ_ONLY_MATERIAL_ACTIONS;
     case "ue_blueprint":
       return READ_ONLY_BLUEPRINT_ACTIONS;
+    case "ue_pie_control":
+      return READ_ONLY_PIE_ACTIONS;
     default:
       return undefined;
   }

@@ -9,6 +9,8 @@ import { viewportCaptureTool } from "./viewportCapture.js";
 import { consoleCommandTool } from "./consoleCommand.js";
 import { pythonExecTool } from "./pythonExec.js";
 import { blueprintTool } from "./blueprint.js";
+import { pieControlTool } from "./pieControl.js";
+import { policyExplainTool } from "./policyExplain.js";
 
 export const ALL_TOOLS: ToolDef[] = [
   statusTool,
@@ -21,6 +23,8 @@ export const ALL_TOOLS: ToolDef[] = [
   consoleCommandTool,
   pythonExecTool,
   blueprintTool,
+  pieControlTool,
+  policyExplainTool,
 ];
 
 export type { ToolDef } from "./common.js";

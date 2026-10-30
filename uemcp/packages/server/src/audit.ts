@@ -123,6 +123,11 @@ export function summarizeArgs(
       summary.mode = args.mode;
       break;
     }
+    case "ue_pie_control":
+      summary.action = args.action;
+      summary.waitReadyMs = args.waitReadyMs;
+      summary.simulate = args.simulate === true;
+      break;
     case "ue_viewport_capture":
       summary.target = args.target;
       summary.returnMode = args.returnMode;
