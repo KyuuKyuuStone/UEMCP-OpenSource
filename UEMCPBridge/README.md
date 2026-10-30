@@ -131,6 +131,7 @@ curl -s http://127.0.0.1:18778/health
 | `console.command` | `ue_console_command` | `allowConsole` |
 | `python.exec` | `ue_python_exec` | `allowExec` |
 | `blueprint.query` | `ue_blueprint` | 写动作（compile）需 `allowWrite` |
+| `pie.control` | `ue_pie_control` | `status` 只读；`start`/`stop`/`restart` 需 `allowWrite` |
 
 成功响应 `result`：`{"ok":true,"data":{},"warnings":[],"meta":{requestId,durationMs,ueVersion,pluginVersion}}`；失败为 JSON-RPC `error`，`data.errorCode` 使用架构文档 §2.9.3 的字符串码。
 
@@ -164,9 +165,10 @@ curl -s http://127.0.0.1:18778/health
 
 怎么确认你的环境兼容：
 
-1. 启动编辑器后看 `GET /health`：`ueVersion` 应为 `5.4.x` 或 `5.7.x`，`capabilities` 含 `screenshot` / `blueprintCompile`，并出现 `rateLimit`；
-2. 跑 §10.2 的 11 个无编辑器自检，全部 exit 0；
-3. 需要引擎的用例按 §10.1 跑 `smoke_bridge.py`（看到 `SMOKE_RESULT PASS`）与 `probe_ue57.py`（看到 `RESULT PASS`，报告写入 `<YourProject>/Saved/UEMCP/probe_ue57.json`）。
+1. 启动编辑器后看 `GET /health`：`ueVersion` 应为 `5.4.x` 或 `5.7.x`，`capabilities` 含 `screenshot` / `blueprintCompile` / `pieControl`，并出现 `rateLimit`；
+2. 同一响应里核对可追溯字段：`pluginVersion`（应等于 `.uplugin` 的 `VersionName`，本版为 `0.1.3`）、`buildHash`（插件 Python 全量 sha256）、`buildTime`、`sourcePath`（**实际加载的插件目录**，用于排除「备份目录顶替」）、`instanceId`；
+3. 跑 §10.2 的 14 个无编辑器自检，全部 exit 0；
+4. 需要引擎的用例按 §10.1 跑 `smoke_bridge.py`（看到 `SMOKE_RESULT PASS`）与 `probe_ue57.py`（看到 `RESULT PASS`，报告写入 `<YourProject>/Saved/UEMCP/probe_ue57.json`）。
 
 ## 9. 已知限制
 

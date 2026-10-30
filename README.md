@@ -26,7 +26,7 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 
 ---
 
-### 特性（MVP 10 个工具）
+### 特性（12 个工具）
 
 | 工具 | 用途 | 默认可见 |
 |---|---|---|
@@ -36,8 +36,10 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 | `ue_level_control` | 查询当前关卡与脏包；打开/保存/新建关卡 | 是（写动作 standard 起） |
 | `ue_asset_search` | 按路径/名称/类搜索资产；查询依赖与反向引用 | 是 |
 | `ue_material_params` | 读取材质/实例参数；设置材质实例参数；创建实例 | 是（写动作 standard 起） |
-| `ue_viewport_capture` | 截取关卡视口或 PIE 画面（PNG/JPEG，返回图片或文件路径） | 是 |
-| `ue_blueprint` | 查询蓝图结构（父类/变量/组件/图/编译状态）；触发编译（节点级读取为 experimental） | 是 |
+| `ue_viewport_capture` | 截取关卡视口或 PIE 画面（PNG/JPEG）；支持 `activateWindow` 置前校验，返回**绝对路径** + `sha256` + `stats`（可自判空图） | 是 |
+| `ue_blueprint` | 查询蓝图结构（父类/生成类/类型/命名图）；触发编译（变量与节点数受引擎限制，见已知限制） | 是 |
+| `ue_pie_control` | 启停 PIE：`start`/`stop`/`restart`/`status`，可选 `simulate`；**不再需要 `--allow-exec`**（写动作走 `allowWrite`） | 是（只读下仅 `status`） |
+| `ue_policy_explain` | 列出每个工具在当前策略下是否可见及原因（`server.policy` / `--allow-console` / `--allow-exec`） | 是 |
 | `ue_console_command` | 执行控制台命令（白名单限制） | **默认隐藏** |
 | `ue_python_exec` | 在编辑器游戏线程执行 Python（无沙箱） | **默认隐藏** |
 
@@ -83,11 +85,11 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 
 ### 下载
 
-当前版本 **v0.1.2**，四个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
+当前版本 **v0.1.3**，四个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
 
-- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.2/UEMCPBridge-5.4.zip>
-- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.2/UEMCPBridge-5.7.zip>
-- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.2/SHA256SUMS.txt>
+- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.3/UEMCPBridge-5.4.zip>
+- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.3/UEMCPBridge-5.7.zip>
+- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.3/SHA256SUMS.txt>
 
 安装三步：
 
@@ -137,7 +139,7 @@ curl -s http://127.0.0.1:18778/health
 
 前置：Node.js ≥ 20。该包**未发布到 npm registry**（`npm view @uemcp/server` 返回 404 属预期），只能从 Release 附件下载。
 
-1. 从最新 Release 下载 [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.2/uemcp-server-0.1.0.tgz)（687,534 B；SHA256 `5D85FDAE…`，完整值见 `SHA256SUMS.txt` 第三行）。
+1. 从最新 Release 下载 [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.3/uemcp-server-0.1.0.tgz)（687,534 B；SHA256 `5D85FDAE…`，完整值见 `SHA256SUMS.txt` 第三行）。
 2. 全局安装（纯本地，不访问 registry）：
 
 ```bash
@@ -237,18 +239,24 @@ curl -s -D - -X POST http://127.0.0.1:18777/mcp \
 1. **写操作**：Server `--policy standard` 起；Bridge 在 `<Project>/Saved/UEMCP/bridge-settings.json` 设 `"allowWrite": true`（或环境变量 `UEMCP_BRIDGE_ALLOW_WRITE`）后重启编辑器。
 2. **控制台 / Python**（默认隐藏，风险自担）：Server `--policy full --allow-console` / `--allow-exec`；Bridge 对应 `allowConsole` / `allowExec`。每次调用仍需确认（支持 elicitation 的客户端会弹确认；否则开关即策略级确认并记入审计）。
 
+#### 可追溯与会话行为（v0.1.3）
+
+- `/health` 额外返回 `buildHash`（插件 Python 全量 sha256）、`buildTime`、`sourcePath`（实际加载的插件目录）、`instanceId`——升级后用它判断「装的是不是新版」「是不是加载了备份目录那份」。
+- 会话有空闲 **TTL（默认 30 分钟）**与**会话数上限（默认 32，可用 `--max-sessions` / `UEMCP_MAX_SESSIONS` 调小）**；满仓时逐出最老的**空闲**会话（正在推流的 SSE 会话不动），只有全部会话都在推流才返回 429（带 `retryAfterMs`）。
+- `initialize` 响应带 `Mcp-Session-Expires-In-Ms`；会话失效返回 `404 -32001` 且 `data.hint="reinitialize"`，客户端据此重建会话即可自愈。
+
 > ⚠️ **本机开发工具的固有风险**：开启 `ue_python_exec` 等于把编辑器进程控制权交给调用方（无沙箱、执行不可中断）；本机恶意程序读取 `~/.uemcp/bridge.json` 可取得桥接 token。这是本地开发工具的固有边界，请在可信环境使用；不要在录屏、演示、CI 中开启 exec。
 
 ### 测试
 
 ```bash
 cd uemcp
-pnpm smoke        # Server 自测：SMOKE RESULT: 71/71 passed
-pnpm test         # node --test：单测 + 黑盒 36 项
+pnpm smoke        # Server 自测：SMOKE RESULT: 84/84 passed
+pnpm test         # node --test：单测 + 黑盒 59 项
 pnpm typecheck && pnpm build
 ```
 
-UE 侧自检（无需引擎的 11 个脚本 + 需 UnrealEditor-Cmd 的冒烟）见 [UEMCPBridge/README.md](UEMCPBridge/README.md) §7。测试端口约定：smoke 用 18999/19001–19008、单测用 19101–19199，避开真实服务端口 18777/18778。
+UE 侧自检（无需引擎的 14 个脚本 + 需 UnrealEditor-Cmd 的冒烟）见 [UEMCPBridge/README.md](UEMCPBridge/README.md) §7。测试端口约定：smoke 用 18999/19001–19008、单测用 19101–19199，避开真实服务端口 18777/18778。
 
 ### 目录结构
 
@@ -289,10 +297,10 @@ UE 侧自检（无需引擎的 11 个脚本 + 需 UnrealEditor-Cmd 的冒烟）�
 
 ### 已知限制
 
-- 蓝图：节点创建/连线/删除与动画蓝图编辑**不支持**（`CAPABILITY_UNAVAILABLE`，需 P2 C++ 模块）；`blueprint.query` 的结构数据也受引擎 Python 暴露限制——`parentClass` 可能为空、`graphs` 可能为 0、`compileState` 可能为 `unknown`。目前可靠的是**触发编译**与确认查询接口可用，图结构与父类信息可能不完整。
+- 蓝图：节点创建/连线/删除与动画蓝图编辑**不支持**（`CAPABILITY_UNAVAILABLE`，需 P2 C++ 模块）。`blueprint.query` 现在能读到**父类 / 生成类 / 蓝图类型 / `EventGraph` / `UserConstructionScript` / `AnimGraph`**；但**变量列表与每图节点数读不到**（`UBlueprint.NewVariables`、`EdGraph.Nodes` 是引擎 protected 属性，需 C++ 模块），返回里会带 `variablesUnavailable` 说明而不是假空数组。
 - PIE 运行中的 Actor 编辑**不支持**：写操作返回 `EDITOR_UNSAFE_STATE`，只读查询仍可用。
 - 本插件只作用于编辑器进程：不解析离线 `.uasset`，不操作打包后的运行时。
-- 编辑器窗口失去焦点时，UE 会降低 tick 频率（实测约 3.1 fps），`viewport.capture` 可能因拿不到新帧而返回 `CAPTURE_TIMEOUT`（HTTP 504 / `-32037` / `retryable=true`，错误契约本身是正确的）。把编辑器窗口保持在前台或可见，或增大 `timeoutMs`，或重试即可。
+- 编辑器窗口失去焦点/最小化时，UE 会降低 tick 频率（实测约 3.1 fps），`viewport.capture` 可能返回 `CAPTURE_TIMEOUT`（HTTP 504 / `-32037` / `retryable=true`）。传 `activateWindow: true` 时桥接会置前并**校验前台**：若窗口仍最小化或未能置前，会**立即**返回 `EDITOR_UNSAFE_STATE`（`reason=window_not_foreground`），不再干等到超时；保持窗口在前台，或传 `activateWindow: false` 自行保证前台。
 - `level.control` 的 `list_dirty`：`actor.edit` 做 spawn/delete 后该关卡包仍会报脏（UE 在内存中增删即置脏，删除不会还原），但磁盘上的 `.umap` 未变（实测三个 umap 的 SHA-256 前后一致）。看到 dirty 不等于磁盘已变，是否落盘由你决定是否保存。
 - `actor.edit` 的 `delete`：`confirm: true` 只在经 MCP Server 时被强制（缺省走 elicitation 或 `--allow-destructive`）；**直连 bridge 端口不会校验 confirm**。安全门在 Server 层，别把 bridge 端口直接暴露给自定义客户端。
 
@@ -319,7 +327,7 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 
 ---
 
-### Features (10 MVP tools)
+### Features (12 tools)
 
 | Tool | What it does | Visible by default |
 |---|---|---|
@@ -329,8 +337,10 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 | `ue_level_control` | Inspect the current level and dirty packages; open, save or create levels | Yes (write actions: standard and above) |
 | `ue_asset_search` | Search assets by path, name or class; query dependencies and referencers | Yes |
 | `ue_material_params` | Read material and material-instance parameters; set instance parameters; create instances | Yes (write actions: standard and above) |
-| `ue_viewport_capture` | Capture the level viewport or the PIE frame (PNG/JPEG; inline image or file path) | Yes |
-| `ue_blueprint` | Inspect Blueprint structure (parent class, variables, components, graphs, compile state); trigger a compile (node-level reads are experimental) | Yes |
+| `ue_viewport_capture` | Capture the level viewport or the PIE frame (PNG/JPEG); `activateWindow` verifies the foreground window and the result carries an **absolute path** + `sha256` + `stats` (self-detect blank frames) | Yes |
+| `ue_blueprint` | Inspect Blueprint structure (parent class, generated class, type, named graphs); trigger a compile (variables and node counts are engine-limited, see known limitations) | Yes |
+| `ue_pie_control` | Control Play-In-Editor: `start` / `stop` / `restart` / `status`, optional `simulate`; **no longer needs `--allow-exec`** (write actions use `allowWrite`) | Yes (read-only: `status` only) |
+| `ue_policy_explain` | List every tool's visibility under the current policy and why (`server.policy` / `--allow-console` / `--allow-exec`) | Yes |
 | `ue_console_command` | Run console commands (allowlist-restricted) | **Hidden** |
 | `ue_python_exec` | Run Python on the editor game thread (no sandbox) | **Hidden** |
 
@@ -376,11 +386,11 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 
 ### Download
 
-Current release: **v0.1.2**, four assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
+Current release: **v0.1.3**, four assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
 
-- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.2/UEMCPBridge-5.4.zip>
-- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.2/UEMCPBridge-5.7.zip>
-- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.2/SHA256SUMS.txt>
+- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.3/UEMCPBridge-5.4.zip>
+- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.3/UEMCPBridge-5.7.zip>
+- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.3/SHA256SUMS.txt>
 
 Install in three steps:
 
@@ -430,7 +440,7 @@ Before pointing it at a production project, work through this list in order:
 
 Requires Node.js ≥ 20. This package is **not published to the npm registry** — `npm view @uemcp/server` returning 404 is expected; download it from the Release assets only.
 
-1. Download [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.2/uemcp-server-0.1.0.tgz) from the latest Release (687,534 B; SHA256 `5D85FDAE…`, full value on the third line of `SHA256SUMS.txt`).
+1. Download [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.3/uemcp-server-0.1.0.tgz) from the latest Release (687,534 B; SHA256 `5D85FDAE…`, full value on the third line of `SHA256SUMS.txt`).
 2. Install it globally (purely local, no registry access):
 
 ```bash
@@ -530,14 +540,20 @@ Enable writes in this order (both sides must agree):
 1. **Writes**: start the server with `--policy standard`; set `"allowWrite": true` in `<Project>/Saved/UEMCP/bridge-settings.json` (or `UEMCP_BRIDGE_ALLOW_WRITE`) and restart the editor.
 2. **Console / Python** (hidden by default, at your own risk): server `--policy full --allow-console` / `--allow-exec`; bridge `allowConsole` / `allowExec`. Each call still requires confirmation (elicitation-capable clients prompt; otherwise the switch itself is policy-level confirmation and is audited).
 
+#### Traceability and session behaviour (v0.1.3)
+
+- `/health` also returns `buildHash` (sha256 over every plugin Python file), `buildTime`, `sourcePath` (the plugin directory actually loaded) and `instanceId` — use them after an upgrade to tell whether the new build is loaded and whether a backup directory shadowed it.
+- Sessions have an idle **TTL (30 min by default)** and a **cap (32 by default, lower it with `--max-sessions` / `UEMCP_MAX_SESSIONS`)**. When the pool is full the oldest **idle** session is evicted (sessions holding a live SSE stream are never evicted); only when every session holds a live stream does the server answer 429 (with `retryAfterMs`).
+- `initialize` responses carry `Mcp-Session-Expires-In-Ms`; an expired session returns `404 -32001` with `data.hint="reinitialize"`, so a well-behaved client heals itself by re-initializing.
+
 > ⚠️ **Inherent risk of a local developer tool**: enabling `ue_python_exec` hands control of the editor process to the caller (no sandbox, no way to interrupt a running snippet). Any local process can read `~/.uemcp/bridge.json` and obtain the bridge token. This is the inherent boundary of a local development tool: use it in trusted environments only, and never enable exec for screen recordings, demos or CI.
 
 ### Testing
 
 ```bash
 cd uemcp
-pnpm smoke        # server self-test: SMOKE RESULT: 71/71 passed
-pnpm test         # node --test: unit + black-box, 36 cases
+pnpm smoke        # server self-test: SMOKE RESULT: 84/84 passed
+pnpm test         # node --test: unit + black-box, 59 cases
 pnpm typecheck && pnpm build
 ```
 
@@ -582,10 +598,10 @@ Three pitfalls that cost our business team real debugging time during a two-day 
 
 ### Known limitations
 
-- Blueprint: node creation, wiring, deletion and animation Blueprint editing are **not supported** (`CAPABILITY_UNAVAILABLE`; needs a P2 C++ module). `blueprint.query` structure data is also limited by what the engine's Python API exposes — `parentClass` may be empty, `graphs` may be 0 and `compileState` may be `unknown`. What works reliably today is **triggering a compile** and confirming the query endpoint answers; graph structure and parent-class details may be incomplete.
+- Blueprint: node creation, wiring, deletion and animation Blueprint editing are **not supported** (`CAPABILITY_UNAVAILABLE`; needs a P2 C++ module). `blueprint.query` now reads **parent class / generated class / Blueprint type / `EventGraph` / `UserConstructionScript` / `AnimGraph`**; **variable lists and per-graph node counts remain unreadable** (`UBlueprint.NewVariables` and `EdGraph.Nodes` are protected engine properties and need a C++ module). The response says so via `variablesUnavailable` instead of returning a fake empty array.
 - Actor edits inside PIE are **not supported**: write operations return `EDITOR_UNSAFE_STATE`; read-only queries still work.
 - The plugin acts on the editor process only: it does not parse offline `.uasset` files and does not operate on packaged runtimes.
-- When the editor window loses focus, UE throttles ticks (about 3.1 fps in our test), so `viewport.capture` may return `CAPTURE_TIMEOUT` (HTTP 504 / `-32037` / `retryable=true`; the error contract itself is correct). Keep the editor window foreground or visible, raise `timeoutMs`, or retry.
+- When the editor window is minimized or unfocused, UE throttles ticks (about 3.1 fps in our test), so `viewport.capture` may return `CAPTURE_TIMEOUT` (HTTP 504 / `-32037` / `retryable=true`). With `activateWindow: true` the bridge restores the window and **verifies the foreground window**: if it is still minimized or could not be brought forward, the call fails **immediately** with `EDITOR_UNSAFE_STATE` (`reason=window_not_foreground`) instead of waiting for the timeout. Keep the window in the foreground, or pass `activateWindow: false` and guarantee it yourself.
 - `level.control` `list_dirty`: after `actor.edit` spawns and deletes actors, the level package still reports dirty (UE marks a package dirty on in-memory add/remove and deleting does not undo it), while the `.umap` on disk is unchanged (three umaps kept identical SHA-256 before and after in our test). Dirty does not mean the file changed — whether to save is your decision.
 - `actor.edit` `delete`: `confirm: true` is enforced only when the call goes through the MCP server (otherwise elicitation or `--allow-destructive` applies). A client that talks to the **bridge port directly is never asked to confirm** — the safety gate lives in the server, so do not expose the bridge port to custom clients.
 

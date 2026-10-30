@@ -1,6 +1,6 @@
 {
   "name": "@uemcp/server",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "UEMCP MCP server (Streamable HTTP / SSE / stdio) for Unreal Engine editor automation (engine version reported by the bridge)",
   "license": "MIT",
   "type": "module",
