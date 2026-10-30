@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md` and a pull-request template.
 - Documented known limitation: when the editor window loses focus, UE throttles ticks (about 3.1 fps in our test) and `viewport.capture` may return `CAPTURE_TIMEOUT`; keep the window foreground, raise `timeoutMs`, or retry.
 - Offline-installable server package (`uemcp-server-0.1.0.tgz`, an esbuild full bundle); the official `pnpm pack` artifact is not distributable because `@uemcp/shared` is not on the npm registry.
+- Roadmap document (`docs/UEMCP-路线图.md`: done / in progress / planned / explicitly out of scope, each with a reason and an alternative) plus documented notes on three usage pitfalls: `Plugins/` upgrade backups shadowing the new build, identifying builds via `/health` `buildHash` / `sourcePath` (new in this release), and two error-prone Python binding return types (`project_world_to_screen` → `Vector2D`, `TraceTypeQuery` member names).
 
 ### Changed
 

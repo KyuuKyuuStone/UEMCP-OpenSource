@@ -253,3 +253,13 @@ Unreal and Unreal Engine are trademarks or registered trademarks of Epic Games, 
 本项目代码以 MIT 许可发布：发行包内附带 MIT 全文（`UEMCPBridge/LICENSE`，与源码仓库根 `LICENSE` 完全一致），不是指针或摘要。
 
 MIT 许可仅覆盖本仓库中的项目代码，**不覆盖** Unreal Engine 引擎本身（受 Epic Games《Unreal Engine 最终用户许可协议》约束），也**不覆盖**你在自己工程中创建的资产与内容；把本插件放入你的工程时，请自行确认与适用许可的兼容性。
+
+## 13. 三个常见使用坑（升级与排错必读）
+
+业务团队两天真实试用中踩到、并为此浪费过排查时间的三个坑。升级或排错前先读：
+
+1. **`Plugins/` 目录扫描坑：升级备份可能顶掉新版。** `Plugins/` 下任何含 `.uplugin` 描述符的目录都会被引擎当作插件扫描。做升级备份时如果直接把 `UEMCPBridge` 复制成 `Plugins/UEMCPBridge.bak`，备份里的旧描述符仍会被扫描；当日志出现 `second location will be ignored` 时，引擎实际加载运行的**可能仍是旧代码**。正确做法：备份时把描述符一并改名（如 `UEMCPBridge.uplugin.bak`），或把整个备份目录移出 `Plugins/`。
+2. **版本辨识：只看 `pluginVersion` 不够。** 历史上出现过两个不同构建共用同一个版本号的情况。升级后请核对 `GET /health` 的 `buildHash` 与 `sourcePath`（**本版新增**字段）：字段存在且值与升级前不同，才说明引擎加载了新构建；若 `/health` 响应里没有这两个字段，说明加载的仍是旧包（结合第 1 条排查 `Plugins/` 下的多副本）。
+3. **两个会导向错误结论的 Python 绑定：**
+   - `unreal.GameplayStatics.project_world_to_screen` 返回 **`Vector2D`**，不是 `(bool, Vector2D)` 元组——按“返回值第一位是 bool”写出的判断会静默地得出错误结论。
+   - `TraceTypeQuery` 可用的枚举成员名与直觉不同：不要照搬 C++ 的 trace channel 名，先用 Python 打印 `unreal.TraceTypeQuery` 的实际成员，再写代码。

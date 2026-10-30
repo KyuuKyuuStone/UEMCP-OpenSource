@@ -269,12 +269,23 @@ UE 侧自检（无需引擎的 11 个脚本 + 需 UnrealEditor-Cmd 的冒烟）�
 | 文档 | 内容 |
 |---|---|
 | [docs/UEMCP-架构设计.md](docs/UEMCP-架构设计.md) | 架构基线 v0.2.0：端口/发现/错误模型/10 工具 Schema/安全模型 |
+| [docs/UEMCP-路线图.md](docs/UEMCP-路线图.md) | 路线图：已做 / 在做 / 计划 / 明确不做（每条含原因与替代方案） |
 | [docs/UEMCP-架构裁决补充.md](docs/UEMCP-架构裁决补充.md) | 7 项关键决策记录（错误码表/确认流/端口策略等） |
 | [uemcp/README-DEV.md](uemcp/README-DEV.md) | 开发者文档：构建/运行/部署/自测/实现契约/已知限制 |
 | [UEMCPBridge/README.md](UEMCPBridge/README.md) | UE 侧：安装/配置/安全/RPC 方法表/自测 |
 | [docs/UEMCP-测试执行报告.md](docs/UEMCP-测试执行报告.md) | 实测结论与覆盖范围 |
 | [docs/UEMCP-代码审查报告.md](docs/UEMCP-代码审查报告.md) | 两轮审查记录 |
 | [HANDOFF.md](HANDOFF.md) | 接手者指南（项目状态/已知限制/发布清单/待办） |
+
+### 常见使用坑（升级与排错必读）
+
+业务团队两天真实试用中踩到、并为此浪费过排查时间的三个坑（与 [UEMCPBridge/README.md](UEMCPBridge/README.md) §13 一致）：
+
+1. **`Plugins/` 目录扫描坑：升级备份可能顶掉新版。** `Plugins/` 下任何含 `.uplugin` 描述符的目录都会被引擎当作插件扫描。做升级备份时如果直接把 `UEMCPBridge` 复制成 `Plugins/UEMCPBridge.bak`，备份里的旧描述符仍会被扫描；当日志出现 `second location will be ignored` 时，引擎实际加载运行的**可能仍是旧代码**。正确做法：备份时把描述符一并改名（如 `UEMCPBridge.uplugin.bak`），或把整个备份目录移出 `Plugins/`。
+2. **版本辨识：只看 `pluginVersion` 不够。** 历史上出现过两个不同构建共用同一个版本号的情况。升级后请核对 `GET /health` 的 `buildHash` 与 `sourcePath`（**本版新增**字段）：字段存在且值与升级前不同，才说明引擎加载了新构建；若 `/health` 响应里没有这两个字段，说明加载的仍是旧包（结合第 1 条排查 `Plugins/` 下的多副本）。
+3. **两个会导向错误结论的 Python 绑定：**
+   - `unreal.GameplayStatics.project_world_to_screen` 返回 **`Vector2D`**，不是 `(bool, Vector2D)` 元组——按“返回值第一位是 bool”写出的判断会静默地得出错误结论。
+   - `TraceTypeQuery` 可用的枚举成员名与直觉不同：不要照搬 C++ 的 trace channel 名，先用 Python 打印 `unreal.TraceTypeQuery` 的实际成员，再写代码。
 
 ### 已知限制
 
@@ -551,12 +562,23 @@ UE-side self-checks (11 scripts that need no engine, plus a commandlet smoke tes
 | Document | Contents |
 |---|---|
 | [docs/UEMCP-架构设计.md](docs/UEMCP-架构设计.md) | Architecture baseline v0.2.0: ports, discovery, error model, 10-tool schemas, security model |
+| [docs/UEMCP-路线图.md](docs/UEMCP-路线图.md) | Roadmap: done / in progress / planned / explicitly out of scope (each with a reason and an alternative) |
 | [docs/UEMCP-架构裁决补充.md](docs/UEMCP-架构裁决补充.md) | Seven key decisions (error-code table, confirmation flow, port policy, …) |
 | [uemcp/README-DEV.md](uemcp/README-DEV.md) | Developer guide: build, run, deploy, self-tests, implementation contracts, known limitations |
 | [UEMCPBridge/README.md](UEMCPBridge/README.md) | UE side: install, configuration, security, RPC method table, self-tests |
 | [docs/UEMCP-测试执行报告.md](docs/UEMCP-测试执行报告.md) | Test results and coverage |
 | [docs/UEMCP-代码审查报告.md](docs/UEMCP-代码审查报告.md) | Two rounds of code review |
 | [HANDOFF.md](HANDOFF.md) | Maintainer guide (status, known limitations, release checklist, TODO) |
+
+### Common pitfalls (must-read before upgrading)
+
+Three pitfalls that cost our business team real debugging time during a two-day trial (mirrors [UEMCPBridge/README.md](UEMCPBridge/README.md) §13):
+
+1. **`Plugins/` directory scanning: upgrade backups can shadow the new build.** The engine scans every directory under `Plugins/` that contains a `.uplugin` descriptor. If you back up by copying `UEMCPBridge` to `Plugins/UEMCPBridge.bak`, the backup's old descriptor is still scanned — and when the log says `second location will be ignored`, the editor may actually be **running the old code**. When backing up, rename the descriptor too (e.g. `UEMCPBridge.uplugin.bak`), or move the backup out of `Plugins/`.
+2. **Version identification: `pluginVersion` alone is not enough.** Two different builds once shipped with the same version number. After upgrading, verify `buildHash` and `sourcePath` in `GET /health` (**both new in this release**): the fields must be present and differ from before the upgrade; if `/health` lacks these fields, the engine is still loading an old package (cross-check pitfall 1 for stray copies under `Plugins/`).
+3. **Two Python bindings that lead to wrong conclusions:**
+   - `unreal.GameplayStatics.project_world_to_screen` returns a **`Vector2D`**, not a `(bool, Vector2D)` tuple — checks written against a leading boolean silently reach wrong conclusions.
+   - The usable member names of `TraceTypeQuery` differ from intuition: do not copy C++ trace-channel names; print the actual members of `unreal.TraceTypeQuery` in Python first.
 
 ### Known limitations
 
