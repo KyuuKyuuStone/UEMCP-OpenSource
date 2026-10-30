@@ -66,3 +66,7 @@ uemcp/tests/WRITE-OP-VERIFY-*.md
 ue_p_text/UEMCP_TEXT_*/
 ue_p_text/*.sln
 ue_p_text/*/.vs/
+
+# Never commit credential files (defense in depth)
+*credentials*
+.git/push-credentials
