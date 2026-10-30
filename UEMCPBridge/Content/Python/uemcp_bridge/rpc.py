@@ -19,7 +19,9 @@ from .handlers import (
     blueprints,
     console,
     levels,
+    logs,
     materials,
+    objects,
     pie,
     python_exec,
     status,
@@ -27,7 +29,7 @@ from .handlers import (
 from .handlers import viewport as viewport_handler
 
 # Methods whose whole body is a write operation.
-WRITE_METHODS = {"actor.edit"}
+WRITE_METHODS = {"actor.edit", "object.call"}
 
 # Methods where only some actions are writes.
 WRITE_ACTIONS = {
@@ -60,6 +62,9 @@ HANDLERS = {
     "python.exec": python_exec.handle,
     "blueprint.query": blueprints.handle,
     "pie.control": pie.handle,
+    "object.reflect": objects.handle_reflect,
+    "object.call": objects.handle_call,
+    "log.query": logs.handle,
 }
 
 # These do not touch the unreal API and therefore bypass the game-thread queue.

@@ -11,6 +11,9 @@ export const TOOL_NAMES = [
   "ue_blueprint",
   "ue_pie_control",
   "ue_policy_explain",
+  "ue_reflect",
+  "ue_call_function",
+  "ue_log_query",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -33,4 +36,7 @@ export const TOOL_RPC_METHOD: Record<ToolName, string> = {
   ue_blueprint: "blueprint.query",
   ue_pie_control: "pie.control",
   ue_policy_explain: "policy.explain",
+  ue_reflect: "object.reflect",
+  ue_call_function: "object.call",
+  ue_log_query: "log.query",
 };

@@ -199,6 +199,58 @@ function dispatch(method, params, meta = {}) {
       }
       return { __err: rpcErrTemplate("INVALID_ARGUMENT", -32602, `Unknown action: ${action}`) };
     }
+    case "object.reflect": {
+      return ok({
+        target: params.target ?? "unknown",
+        targetClass: "StaticMeshActor",
+        functions: [
+          { name: "GetActorLabel", pythonName: "get_actor_label", paramCount: null, inherited: true },
+          { name: "SetActorHidden", pythonName: "set_actor_hidden", paramCount: 1, inherited: true },
+          { name: "FlyToMonitorPoint", pythonName: "fly_to_monitor_point", paramCount: 3, inherited: false },
+        ],
+        truncated: false,
+      });
+    }
+    case "object.call": {
+      if (!flags.allowWrite)
+        return { __err: rpcErrTemplate("PERMISSION_DENIED", -32003, "Bridge allowWrite=false", { gate: "bridge.allowWrite" }) };
+      const fn = String(params.function ?? "");
+      if (!fn) return { __err: rpcErrTemplate("INVALID_ARGUMENT", -32602, "function is required") };
+      const snake = fn.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+      if (snake.startsWith("_") || /python|exec|eval|subprocess/.test(snake))
+        return { __err: rpcErrTemplate("PERMISSION_DENIED", -32003, "function name is blocked", { blocked: true }) };
+      if (snake === "set_actor_hidden" || snake === "fly_to_monitor_point")
+        return ok({ target: params.target, function: snake, returned: null, returnedVoid: true, durationMs: 1 });
+      return ok({ target: params.target, function: snake, returned: "StaticMeshActor_1", returnedVoid: false, durationMs: 1 });
+    }
+    case "log.query": {
+      const seed = [
+        { lineNo: 34, level: "Warning", text: "LogPluginManager: Warning: The same version (v2) of plugin 'UEMCPBridge' exists at ... - second location will be ignored." },
+        { lineNo: 120, level: "Display", text: "LogTemp: UEMCP bridge started" },
+        { lineNo: 240, level: "Error", text: "LogTemp: capture timed out" },
+      ];
+      let lines = seed;
+      if (params.pattern) {
+        let re;
+        try {
+          re = new RegExp(String(params.pattern));
+        } catch {
+          return { __err: rpcErrTemplate("INVALID_ARGUMENT", -32602, "invalid pattern") };
+        }
+        lines = lines.filter((l) => re.test(l.text));
+      }
+      if (Array.isArray(params.levels) && params.levels.length) lines = lines.filter((l) => params.levels.includes(l.level));
+      const offset = Number(params.offset ?? 0);
+      const limit = Number(params.limit ?? 200);
+      const page = lines.slice(offset, offset + limit);
+      return ok({
+        logPath: "C:/UEMCP-TestProject/Saved/Logs/UEMCP-TestProject.log",
+        scannedLines: 1359,
+        matched: lines.length,
+        truncated: page.length < lines.length - offset,
+        lines: page,
+      });
+    }
     case "pie.control": {
       const action = params.action ?? "status";
       if (!["start", "stop", "restart", "status"].includes(action))

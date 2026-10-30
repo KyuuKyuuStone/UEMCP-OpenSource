@@ -223,10 +223,10 @@ async function runSuite(home) {
   section("tools/list: policy matrix (PROTO-03)");
   const listStd = await rpc(PORT, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }, { headers: H });
   const namesStd = (listStd.json?.result?.tools ?? []).map((t) => t.name).sort();
-  check("standard = exactly 10 tools", namesStd.length === 10 && JSON.stringify(namesStd) === JSON.stringify([
-    "ue_actor_edit", "ue_actor_query", "ue_asset_search", "ue_blueprint",
-    "ue_editor_status", "ue_level_control", "ue_material_params", "ue_pie_control",
-    "ue_policy_explain", "ue_viewport_capture",
+  check("standard = exactly 13 tools", namesStd.length === 13 && JSON.stringify(namesStd) === JSON.stringify([
+    "ue_actor_edit", "ue_actor_query", "ue_asset_search", "ue_blueprint", "ue_call_function",
+    "ue_editor_status", "ue_level_control", "ue_log_query", "ue_material_params",
+    "ue_pie_control", "ue_policy_explain", "ue_reflect", "ue_viewport_capture",
   ]), JSON.stringify(namesStd));
   const stdTool = (n) => listStd.json.result.tools.find((t) => t.name === n);
   check("standard: ue_editor_status readOnlyHint=true (§5.0.4)", stdTool("ue_editor_status").annotations?.readOnlyHint === true);
@@ -300,10 +300,10 @@ async function runSuite(home) {
   }
   const ro = await toolNames(PORT2);
   const roNames = ro.tools.map((t) => t.name).sort();
-  check("read-only = exactly 9 tools", roNames.length === 9 && JSON.stringify(roNames) === JSON.stringify([
+  check("read-only = exactly 11 tools", roNames.length === 11 && JSON.stringify(roNames) === JSON.stringify([
     "ue_actor_query", "ue_asset_search", "ue_blueprint", "ue_editor_status",
-    "ue_level_control", "ue_material_params", "ue_pie_control", "ue_policy_explain",
-    "ue_viewport_capture",
+    "ue_level_control", "ue_log_query", "ue_material_params", "ue_pie_control",
+    "ue_policy_explain", "ue_reflect", "ue_viewport_capture",
   ]), JSON.stringify(roNames));
   const roLevel = ro.tools.find((t) => t.name === "ue_level_control");
   check("read-only ue_level_control action enum narrowed", JSON.stringify(roLevel.inputSchema.properties.action.enum) === JSON.stringify(["get_current", "list_dirty"]), JSON.stringify(roLevel.inputSchema.properties.action));
@@ -314,12 +314,14 @@ async function runSuite(home) {
   const roPie = ro.tools.find((t) => t.name === "ue_pie_control");
   check("read-only ue_pie_control action enum narrowed to status", JSON.stringify(roPie?.inputSchema?.properties?.action?.enum) === JSON.stringify(["status"]), JSON.stringify(roPie?.inputSchema?.properties?.action));
   check("read-only ue_pie_control readOnlyHint=true (status only)", roPie?.annotations?.readOnlyHint === true);
-  check("read-only mixed tools readOnlyHint=true/destructiveHint=false", ["ue_level_control", "ue_material_params", "ue_blueprint"].every((n) => ro.tools.find((t) => t.name === n).annotations.readOnlyHint === true && ro.tools.find((t) => t.name === n).annotations.destructiveHint === false));
+  check("read-only hides ue_call_function (write-class primitive)", !roNames.includes("ue_call_function"), JSON.stringify(roNames));
+  check("read-only exposes ue_reflect/ue_log_query with readOnlyHint=true", ["ue_reflect", "ue_log_query"].every((n) => { const t = ro.tools.find((x) => x.name === n); return t && t.annotations.readOnlyHint === true; }));
+  check("standard exposes ue_call_function with readOnlyHint=false", (() => { const t = listStd.json.result.tools.find((x) => x.name === "ue_call_function"); return t && t.annotations.readOnlyHint === false; })());  check("read-only mixed tools readOnlyHint=true/destructiveHint=false", ["ue_level_control", "ue_material_params", "ue_blueprint"].every((n) => ro.tools.find((t) => t.name === n).annotations.readOnlyHint === true && ro.tools.find((t) => t.name === n).annotations.destructiveHint === false));
   check("read-only every tool has dual-shape outputSchema", ro.tools.every((t) => outputSchemaBranches(t) !== null));
 
   const full = await toolNames(PORT3);
   const fullNames = full.tools.map((t) => t.name).sort();
-  check("full + both switches = exactly 12 tools", fullNames.length === 12 && fullNames.includes("ue_console_command") && fullNames.includes("ue_python_exec"));
+  check("full + both switches = exactly 15 tools", fullNames.length === 15 && fullNames.includes("ue_console_command") && fullNames.includes("ue_python_exec"));
   check("ue_policy_explain visible in read-only, standard and full", [roNames, namesStd, fullNames].every((n) => n.includes("ue_policy_explain")), JSON.stringify({ ro: roNames.includes("ue_policy_explain"), std: namesStd.includes("ue_policy_explain"), full: fullNames.includes("ue_policy_explain") }));
 
   // SEC-01: hidden tool direct call
@@ -569,7 +571,7 @@ async function runSuite(home) {
   const stdioLines = stdioResult.out.split("\n").filter((l) => l.trim());
   check("stdio stdout: every line valid JSON-RPC (PROTO-16)", stdioLines.length >= 2 && stdioLines.every((l) => { try { const j = JSON.parse(l); return j.jsonrpc === "2.0"; } catch { return false; } }), stdioResult.out.slice(0, 200));
   const stdioTools = (() => { for (const l of stdioLines) { try { const j = JSON.parse(l); if (j.id === 2) return j.result?.tools?.length; } catch { /* skip */ } } return undefined; })();
-  check("stdio tools/list = 10 (standard)", stdioTools === 10, `got ${stdioTools}`);
+  check("stdio tools/list = 13 (standard)", stdioTools === 13, `got ${stdioTools}`);
   check("stdio stderr has JSON log", (() => stdioResult.errOut.split("\n").some((l) => { try { const j = JSON.parse(l); return typeof j.event === "string"; } catch { return false; } }))());
 
   // ---- cleanup ----

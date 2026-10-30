@@ -138,9 +138,9 @@ test("level: READ_ONLY_LEVEL_ACTIONS matches policy.ts narrowing and is disjoint
 
 // ---------- 工具目录 ----------
 
-test("toolNames: full catalog has exactly 12 tools and RPC mapping is total", () => {
-  assert.equal(TOOL_NAMES.length, 12);
-  assert.equal(FULL_TOOL_CATALOG.size, 12);
+test("toolNames: full catalog has exactly 15 tools and RPC mapping is total", () => {
+  assert.equal(TOOL_NAMES.length, 15);
+  assert.equal(FULL_TOOL_CATALOG.size, 15);
   for (const t of TOOL_NAMES) {
     assert.equal(typeof TOOL_RPC_METHOD[t], "string", `missing RPC method for ${t}`);
   }
@@ -213,8 +213,8 @@ const MIN_OK_DATA = {
   ue_editor_status: { policies: { mode: "read-only", write: false, exec: false, destructive: false } },
 };
 
-test("outputs: TOOL_OUTPUT_SCHEMAS covers exactly the 12-tool catalog", () => {
-  assert.equal(new Set(Object.keys(TOOL_OUTPUT_SCHEMAS)).size, 12);
+test("outputs: TOOL_OUTPUT_SCHEMAS covers exactly the 15-tool catalog", () => {
+  assert.equal(new Set(Object.keys(TOOL_OUTPUT_SCHEMAS)).size, 15);
   for (const t of TOOL_NAMES) {
     assert.ok(TOOL_OUTPUT_SCHEMAS[t], `${t} must have an output schema`);
   }

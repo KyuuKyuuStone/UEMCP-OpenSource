@@ -145,14 +145,14 @@ const SC = (r) => r.body.result?.structuredContent;
 
 // ---------- settings：加载与默认值（CLI > env > 默认） ----------
 
-test("settings: no args and no env → default read-only policy exposes 9 tools", async () => {
+test("settings: no args and no env → default read-only policy exposes 11 tools", async () => {
   const home = newHome();
   const srv = startServer(["--port", "19101"], serverEnv(home));
   try {
     await waitHealth(19101);
     const sid = await initSession(19101);
     const names = await listTools(19101, sid);
-    assert.equal(names.length, 9);
+    assert.equal(names.length, 11);
     assert.ok(names.includes("ue_editor_status"));
     assert.ok(!names.includes("ue_actor_edit"), "read-only must hide P1 ue_actor_edit");
     assert.ok(!names.includes("ue_python_exec"), "read-only must hide P2 tools");
@@ -161,14 +161,14 @@ test("settings: no args and no env → default read-only policy exposes 9 tools"
   }
 });
 
-test("settings: UEMCP_POLICY env=standard → 10 tools (env used when no CLI flag)", async () => {
+test("settings: UEMCP_POLICY env=standard → 13 tools (env used when no CLI flag)", async () => {
   const home = newHome();
   const srv = startServer(["--port", "19102"], serverEnv(home, { UEMCP_POLICY: "standard" }));
   try {
     await waitHealth(19102);
     const sid = await initSession(19102);
     const names = await listTools(19102, sid);
-    assert.equal(names.length, 10);
+    assert.equal(names.length, 13);
     assert.ok(names.includes("ue_actor_edit"));
     assert.ok(!names.includes("ue_python_exec"));
   } finally {
@@ -183,7 +183,7 @@ test("settings: CLI --policy overrides UEMCP_POLICY env", async () => {
     await waitHealth(19103);
     const sid = await initSession(19103);
     const names = await listTools(19103, sid);
-    assert.equal(names.length, 9, "CLI read-only must win over env standard");
+    assert.equal(names.length, 11, "CLI read-only must win over env standard");
   } finally {
     await stop(srv.proc);
   }
@@ -518,7 +518,7 @@ test("outputSchema: every visible tool publishes a dual-shape (success|failure) 
     const text = await res.text();
     const json = JSON.parse(text.match(/^data: (.*)$/m)?.[1] ?? text);
     const tools = json.result.tools;
-    assert.equal(tools.length, 10);
+    assert.equal(tools.length, 13);
     for (const t of tools) {
       // MCP 规范/SDK ToolSchema：根层级必须 type:"object"
       assert.equal(t.outputSchema?.type, "object", `${t.name}: outputSchema root must be type object`);
@@ -538,7 +538,7 @@ test("outputSchema: every visible tool publishes a dual-shape (success|failure) 
   }
 });
 
-test("outputSchema: success AND error structuredContent pass the published schema for all 12 tools", async () => {
+test("outputSchema: success AND error structuredContent pass the published schema for all 15 tools", async () => {
   const home = newHome();
   const bridge = await startBridge(home, ["--allow-write", "--allow-exec", "--allow-console"]);
   const srv = startServer(
@@ -556,7 +556,7 @@ test("outputSchema: success AND error structuredContent pass the published schem
     const ltext = await lres.text();
     const ljson = JSON.parse(ltext.match(/^data: (.*)$/m)?.[1] ?? ltext);
     const tools = ljson.result.tools;
-    assert.equal(tools.length, 12, "full+switches exposes the full catalog");
+    assert.equal(tools.length, 15, "full+switches exposes the full catalog");
     const schemas = new Map(tools.map((t) => [t.name, t.outputSchema]));
 
     const successes = [
@@ -572,6 +572,9 @@ test("outputSchema: success AND error structuredContent pass the published schem
       ["ue_blueprint", { action: "query", blueprintPath: "/Game/BP_Test" }],
       ["ue_pie_control", { action: "status" }],
       ["ue_policy_explain", {}],
+      ["ue_reflect", { target: "/Game/Maps/L_TestUEMCP" }],
+      ["ue_call_function", { target: "StaticMeshActor_1", function: "get_actor_label" }],
+      ["ue_log_query", { pattern: "second location", limit: 5 }],
     ];
     for (const [i, [name, args]] of successes.entries()) {
       const r = await rpc(19151, sid, name, args, 100 + i);

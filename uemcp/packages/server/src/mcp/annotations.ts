@@ -51,5 +51,11 @@ export function toolAnnotations(tool: ToolName, mode: PolicyMode): ToolAnnotatio
         : { title: "PIE Control", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
     case "ue_policy_explain":
       return { title: "Explain Policy & Tool Visibility", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+    case "ue_reflect":
+      return { title: "Reflect Object Functions", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+    case "ue_call_function":
+      return { title: "Call Object Function", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+    case "ue_log_query":
+      return { title: "Query Editor Log", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   }
 }

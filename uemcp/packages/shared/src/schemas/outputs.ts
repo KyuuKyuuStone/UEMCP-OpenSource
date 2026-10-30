@@ -301,6 +301,54 @@ const PolicyExplainData = looseObject({
 
 export const PolicyExplainOutput = outputUnion(PolicyExplainData);
 
+// ---------- 通用原语（2026-10-30）：ue_reflect / ue_call_function / ue_log_query ----------
+
+const ReflectData = looseObject({
+  target: z.string().optional(),
+  targetClass: z.string().optional(),
+  functions: z
+    .array(
+      looseObject({
+        name: z.string().optional(),
+        pythonName: z.string().optional(),
+        paramCount: z.number().nullable().optional(),
+        inherited: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  truncated: z.boolean().optional(),
+});
+
+export const ReflectOutput = outputUnion(ReflectData);
+
+const CallFunctionData = looseObject({
+  target: z.string().optional(),
+  function: z.string().optional(),
+  returned: z.unknown().optional(),
+  returnedVoid: z.boolean().optional(),
+  durationMs: z.number().optional(),
+});
+
+export const CallFunctionOutput = outputUnion(CallFunctionData);
+
+const LogQueryData = looseObject({
+  logPath: z.string().optional(),
+  scannedLines: z.number().optional(),
+  matched: z.number().optional(),
+  truncated: z.boolean().optional(),
+  lines: z
+    .array(
+      looseObject({
+        lineNo: z.number().optional(),
+        level: z.string().optional(),
+        text: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+export const LogQueryOutput = outputUnion(LogQueryData);
+
 /** 全目录 data schema（供 Server 侧构造 MCP 规范要求的根层级 type:"object" outputSchema，
  *  见 packages/server/src/mcp/outputSchema.ts；新增工具缺 data schema 会编译失败） */
 export const TOOL_OUTPUT_DATA_SCHEMAS: Record<ToolName, z.ZodTypeAny> = {
@@ -316,6 +364,9 @@ export const TOOL_OUTPUT_DATA_SCHEMAS: Record<ToolName, z.ZodTypeAny> = {
   ue_blueprint: BlueprintData,
   ue_pie_control: PieControlData,
   ue_policy_explain: PolicyExplainData,
+  ue_reflect: ReflectData,
+  ue_call_function: CallFunctionData,
+  ue_log_query: LogQueryData,
 };
 
 /** 全目录 outputSchema（成功/失败双形态 union，parse 级真值供测试使用）。

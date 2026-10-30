@@ -32,6 +32,11 @@ export function isToolVisible(tool: ToolName, p: PolicyState): boolean {
       return true; // 恒注册（read-only 收窄为 status；写动作另有 policy/allowWrite 双门）
     case "ue_policy_explain":
       return true; // 纯只读信息工具恒可见（无副作用、无 RPC）
+    case "ue_reflect":
+    case "ue_log_query":
+      return true; // 通用只读原语恒可见
+    case "ue_call_function":
+      return p.mode !== "read-only"; // 写类原语：read-only 不注册（同 ue_actor_edit）
     case "ue_actor_edit":
       return p.mode !== "read-only"; // P1：read-only 不注册
     case "ue_console_command":
