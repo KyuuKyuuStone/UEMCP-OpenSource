@@ -50,7 +50,14 @@ Plugin and server now share the version number (`0.1.4`), and `/health` reports 
 
 ### Fixed
 
-- Harness could read a newer unrelated log (`cef3.log`) instead of the project log, causing a false failure.
+> 以下四条来自业务团队《UEMCP v0.1.4 复测缺陷单》（编号 D1–D4）。**代码修复随 0.1.5 合入，合入后复核**——在包含修复的包发布之前，本节描述的是修复后的目标行为，不是当前已发布包的行为。
+>
+> The four entries below come from the business team's v0.1.4 defect report (D1–D4). **The code fixes land with 0.1.5 and will be re-verified after merge** — until a package containing them ships, this section describes the target behaviour, not the currently released packages.
+
+- **D1**: `ue_viewport_capture` now passes `activateWindow` through to the bridge (the 0.1.4 server schema rejected it with `INVALID_ARGUMENT: Unrecognized key`, so the parameter only worked when calling the bridge port directly). A successful capture returns `activation{requested, ok, editorPid, foregroundPid, hwnd, isIconic, alreadyForeground}`.
+- **D2**: `log.query` level inference now recognises implicit `LogXxx:` lines (no explicit `: Error:` / `: Warning:` / `: Display:` / `: Verbose:` segment → counted as `Log`); lines that match no rule keep `level=null` and are excluded from `levels` filtering, and the response reports an `unclassified` count. In 0.1.4, `levels:["Log"]` silently missed implicit `LogXxx:` lines (`matched 0`).
+- **D3**: `object.reflect` resolves bare class names (e.g. `CustomDomainCmdHandler`) via derived-class/instance search instead of requiring a full object path; on failure the error carries `candidates` with the matched full paths.
+- **D4**: `object.call` accepts `captureLog:true` — the call returns the log lines captured inside the call window (`logLines[{lineNo, level, text}]`), so `void` functions no longer leave the caller with only `{"returned":null,"returnedVoid":true}`.
 - `viewport.capture` no longer blocks until the server-side 45 s timeout: the bridge now bounds the capture itself, reports `CAPTURE_TIMEOUT` with render-environment diagnostics, and stops forcing the game view. Root cause confirmed as UE throttling ticks (~3 fps) while the editor window is minimized or unfocused — foreground capture was measured at 132–976 ms.
 - `blueprint.query` no longer returns an "empty success": when parent class, variables and graphs are all empty the handler raises `UNSUPPORTED` with per-property diagnostics. Reading blueprint structure still depends on engine Python exposure and remains unreliable.
 - `blueprint.query` now reads real structure where the engine allows it: `parentClass`, `generatedClass` and `blueprintType` come from Asset Registry tags (verified on 5.4.4: `Actor`), and `EventGraph` / `UserConstructionScript` / `AnimGraph` are discovered through `BlueprintEditorLibrary.find_graph`. `variables` stay unavailable because `UBlueprint.NewVariables` is a protected property — the response now says `variablesUnavailable=NEW_VARIABLES_PROTECTED_IN_ENGINE_PYTHON` instead of returning an empty list.

@@ -107,6 +107,22 @@ def _renderer_details(env):
     }
 
 
+def _activation_payload(requested, info):
+    """``activation`` block for successful captures (D1)."""
+    if not requested:
+        return {"requested": False}
+    info = info or {}
+    return {
+        "requested": True,
+        "ok": bool(info.get("ok", False)),
+        "alreadyForeground": bool(info.get("alreadyForeground", False)),
+        "hwnd": int(info.get("hwnd") or 0),
+        "editorPid": int(info.get("editorPid") or 0),
+        "foregroundPid": int(info.get("foregroundPid") or 0),
+        "isIconic": bool(info.get("isIconic", False)),
+    }
+
+
 def _foreground_window_info():
     """Return ``{"hwnd", "pid"}`` for the current foreground window."""
     import ctypes
@@ -862,6 +878,7 @@ def handle(server, params):
             .isoformat()
             .replace("+00:00", "Z"),
             "returnMode": return_mode,
+            "activation": _activation_payload(activate_window, activation_info),
         }
         return Done(HandlerResult(data, warnings))
 

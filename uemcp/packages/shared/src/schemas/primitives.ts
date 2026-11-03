@@ -30,6 +30,11 @@ export function callFunctionInputSchema() {
       function: z.string().min(1).max(256),
       args: z.array(z.unknown()).max(CALL_MAX_ARGS).default([]),
       waitMs: z.number().int().min(0).max(CALL_MAX_WAIT_MS).default(5000),
+      // D4 预留透传：Bridge 侧 object.call 将在 0.1.5 支持 captureLog（返回调用窗口内
+      // 抓到的 logLines）。**刻意不设 default**——当前 Bridge 的 check_keys 白名单为
+      // {target,function,args,waitMs}，若默认值恒被下发，所有调用都会被现桥接以
+      // INVALID_ARGUMENT 拒绝；只在调用方显式传入时才透传，D4 落地后即自动生效。
+      captureLog: z.boolean().optional(),
     })
     .strict();
 }

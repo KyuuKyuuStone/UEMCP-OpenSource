@@ -10,8 +10,25 @@ from . import HandlerResult, check_keys, get_int, get_list, get_str, get_unreal
 LEVELS = {"Error", "Warning", "Log", "Display"}
 _MAX_TEXT = 500
 _LINE_TS_RE = re.compile(r"^\[(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2}):(\d{3})\]")
-_LEVEL_RE = re.compile(r"Log\w*: (Error|Warning|Log|Display):")
-_FALLBACK_LEVEL_RE = re.compile(r"\b(Error|Warning|Display)\b")
+# UE writes most lines as "<LogCategory>: message" with an implicit Log level.
+_EXPLICIT_LEVEL_RE = re.compile(r": (Error|Warning|Display|Verbose|Log): ")
+_IMPLICIT_LOG_RE = re.compile(r"(?:^|[\]])\s*Log[A-Z][A-Za-z0-9_]*: ")
+
+
+def _classify_level(text):
+    """Return the UE verbosity of a log line, or ``None`` when unknown.
+
+    1. explicit ``: Error:`` / ``: Warning:`` / ``: Display:`` / ``: Verbose:``
+       (and ``: Log:``) segment wins;
+    2. otherwise a ``LogCategory: message`` prefix is an implicit Log line;
+    3. otherwise unclassified (``None``), excluded from every level filter.
+    """
+    explicit = _EXPLICIT_LEVEL_RE.search(text)
+    if explicit:
+        return explicit.group(1)
+    if _IMPLICIT_LOG_RE.search(text):
+        return "Log"
+    return None
 
 
 def _project_dir():
@@ -156,20 +173,24 @@ def handle(server, params):
 
     scanned = 0
     matched = 0
+    unclassified = 0
     selected = []
     with open(log_path, "r", encoding="utf-8", errors="replace") as handle_file:
         for line_no, raw in enumerate(handle_file, 1):
             scanned += 1
             text = raw.rstrip("\r\n")
-            level_match = _LEVEL_RE.search(text) or _FALLBACK_LEVEL_RE.search(text)
-            level = level_match.group(1) if level_match else None
-            if levels and level not in levels:
-                continue
             if since_dt is not None:
                 line_time = _parse_line_time(text)
                 if line_time is not None and line_time < since_dt:
                     continue
             if regex is not None and not regex.search(text):
+                continue
+            level = _classify_level(text)
+            if level is None:
+                # Unclassified lines never satisfy an explicit level filter,
+                # but they are still counted so callers can see the gap.
+                unclassified += 1
+            if levels and level not in levels:
                 continue
             matched += 1
             if matched <= offset:
@@ -185,6 +206,7 @@ def handle(server, params):
             "logPath": log_path,
             "scannedLines": scanned,
             "matched": matched,
+            "unclassified": unclassified,
             "truncated": matched > offset + len(selected),
             "lines": selected,
         }

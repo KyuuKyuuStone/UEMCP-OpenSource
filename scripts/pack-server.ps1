@@ -35,8 +35,13 @@ $pkg = Join-Path $stage "package"
 New-Item -ItemType Directory -Path (Join-Path $pkg "dist") -Force | Out-Null
 
 $bundle = Join-Path $pkg "dist/index.js"
+# The shebang is REQUIRED: npm's Windows cmd-shim only wraps the bin with node.exe
+# when the target file starts with "#!/usr/bin/env node"; without it npm emits
+#   "%dp0%\node_modules\@uemcp\server\dist\index.js" %*
+# which asks cmd.exe to execute a .js file directly and fails (exit 1, no output).
+# The createRequire banner is still needed for CJS deps bundled into ESM output.
 & $esbuild $serverEntry --bundle --platform=node --format=esm --target=node20 "--outfile=$bundle" `
-  "--banner:js=import { createRequire } from 'module'; const require = createRequire(import.meta.url);" | Out-Null
+  "--banner:js=#!/usr/bin/env node`nimport { createRequire } from 'module'; const require = createRequire(import.meta.url);" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "esbuild failed with exit $LASTEXITCODE" }
 
 Copy-Item (Join-Path $repoRoot "LICENSE") $pkg -Force

@@ -6,12 +6,28 @@ blacklist and the ``allowWrite`` gate.
 """
 
 import os
+import shutil
 import sys
+import tempfile
 import types
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_DIR = os.path.dirname(TESTS_DIR)
 PYTHON_DIR = os.path.join(PLUGIN_DIR, "Content", "Python")
+
+PROJECT_DIR = tempfile.mkdtemp(prefix="uemcp_objproj_")
+EMPTY_PROJECT = tempfile.mkdtemp(prefix="uemcp_objempty_")
+LOG_DIR = os.path.join(PROJECT_DIR, "Saved", "Logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_PATH = os.path.join(LOG_DIR, os.path.basename(PROJECT_DIR) + ".log")
+with open(LOG_PATH, "w", encoding="utf-8") as _handle:
+    _handle.write("[2026.11.03-07.00.00:000][  0]LogTemp: baseline one\n")
+    _handle.write("[2026.11.03-07.00.01:000][  0]LogTemp: baseline two\n")
+
+
+def _log_line_count():
+    with open(LOG_PATH, "rb") as handle:
+        return handle.read().count(b"\n")
 
 
 class BaseActor(object):
@@ -23,8 +39,11 @@ class BaseActor(object):
 
 
 class FakeClass(object):
+    def __init__(self, name):
+        self._name = name
+
     def get_name(self):
-        return "MyActor"
+        return self._name
 
 
 class FakeActor(BaseActor):
@@ -40,11 +59,52 @@ class FakeActor(BaseActor):
     def _private(self):
         return "nope"
 
+    def write_log(self):
+        with open(LOG_PATH, "a", encoding="utf-8") as handle:
+            handle.write(
+                "[2026.11.03-07.00.02:000][  0]LogMarker: flyToMonitorPoint ok, devices: 25\n"
+            )
+            handle.write(
+                "[2026.11.03-07.00.03:000][  0]LogTemp: Error: device offline\n"
+            )
+        return None
+
+    def write_many_logs(self):
+        with open(LOG_PATH, "a", encoding="utf-8") as handle:
+            for index in range(250):
+                handle.write(
+                    "[2026.11.03-07.01:%02d:000][  0]LogMarker: bulk %03d\n"
+                    % (index % 60, index)
+                )
+        return None
+
     def get_class(self):
-        return FakeClass()
+        return FakeClass("MyActor")
 
 
 ACTOR = FakeActor()
+PIE_WORLD = object()
+PIE_RUNNING = {"value": False}
+
+
+class FakePieActor(object):
+    def fly_to_monitor_point(self):
+        return None
+
+    def test_command(self):
+        return "ok"
+
+    def get_cmd_prefix(self):
+        return "cmd_"
+
+    def get_path_name(self):
+        return "/Temp/UEDPIE_0_Map.Map:PersistentLevel.CustomDomainCmdHandler_1"
+
+    def get_class(self):
+        return FakeClass("CustomDomainCmdHandler")
+
+
+PIE_ACTOR = FakePieActor()
 
 
 class FakeActorSubsystem(object):
@@ -52,9 +112,44 @@ class FakeActorSubsystem(object):
         return [ACTOR]
 
 
+class FakeEditorSubsystem(object):
+    def get_game_world(self):
+        return PIE_WORLD if PIE_RUNNING["value"] else None
+
+
+class FakeGameplayStatics(object):
+    @staticmethod
+    def get_all_actors_of_class(world, cls):
+        if world is PIE_WORLD:
+            return [PIE_ACTOR]
+        return []
+
+
 unreal_stub = types.ModuleType("unreal")
 unreal_stub.EditorActorSubsystem = object
-unreal_stub.get_editor_subsystem = lambda cls: FakeActorSubsystem()
+unreal_stub.UnrealEditorSubsystem = object
+unreal_stub.Actor = object
+unreal_stub.GameplayStatics = FakeGameplayStatics
+
+
+def _get_editor_subsystem(cls):
+    if cls is unreal_stub.UnrealEditorSubsystem:
+        return FakeEditorSubsystem()
+    return FakeActorSubsystem()
+
+
+unreal_stub.get_editor_subsystem = _get_editor_subsystem
+
+
+class Paths(object):
+    project = PROJECT_DIR
+
+    @staticmethod
+    def project_dir():
+        return Paths.project
+
+
+unreal_stub.Paths = Paths
 
 
 def find_object(outer, target):
@@ -130,6 +225,30 @@ def main():
         assert flags.get("get_name") is True, flags
         assert flags.get("fly_to_monitor_point") is False, flags
 
+    def reflect_bare_class_name_pie():
+        PIE_RUNNING["value"] = True
+        try:
+            data = objects.handle_reflect(_Server(), {"target": "CustomDomainCmdHandler"}).data
+        finally:
+            PIE_RUNNING["value"] = False
+        assert data["targetClass"] == "CustomDomainCmdHandler", data
+        names = [item["name"] for item in data["functions"]]
+        assert "fly_to_monitor_point" in names, names
+        assert "test_command" in names, names
+
+    def reflect_missing_candidates():
+        PIE_RUNNING["value"] = True
+        try:
+            exc = _expect(
+                "NOT_FOUND",
+                lambda: objects.handle_reflect(_Server(), {"target": "CustomDomainCmdHandlerZ"}),
+            )
+        finally:
+            PIE_RUNNING["value"] = False
+        candidates = exc.details.get("candidates") or []
+        assert candidates, exc.details
+        assert any("CustomDomainCmdHandler" in path for path in candidates), exc.details
+
     def reflect_missing():
         _expect("NOT_FOUND", lambda: objects.handle_reflect(_Server(), {"target": "Nope"}))
 
@@ -143,6 +262,41 @@ def main():
         data = call({"target": "MyActor", "function": "sum_two", "args": [2, 3]}).data
         assert data["returned"] == 5, data
         assert data["returnedVoid"] is False, data
+
+    def capture_log_window_lines():
+        before = _log_line_count()
+        result = call({"target": "MyActor", "function": "write_log", "captureLog": True})
+        data = result.data
+        assert data["returnedVoid"] is True, data
+        lines = data["logLines"]
+        assert len(lines) == 2, lines
+        assert [line["lineNo"] for line in lines] == [before + 1, before + 2], lines
+        assert [line["level"] for line in lines] == ["Log", "Error"], lines
+        assert "devices: 25" in lines[0]["text"], lines
+        assert data["logTruncated"] is False, data
+
+    def capture_log_absent_by_default():
+        data = call({"target": "MyActor", "function": "fly_to_monitor_point"}).data
+        assert "logLines" not in data, data
+        assert "logTruncated" not in data, data
+
+    def capture_log_missing_file():
+        Paths.project = EMPTY_PROJECT
+        try:
+            result = call(
+                {"target": "MyActor", "function": "fly_to_monitor_point", "captureLog": True}
+            )
+        finally:
+            Paths.project = PROJECT_DIR
+        assert result.data["logLines"] == [], result.data
+        assert any("CAPTURE_LOG_FAILED" in w for w in result.warnings), result.warnings
+
+    def capture_log_truncates():
+        result = call({"target": "MyActor", "function": "write_many_logs", "captureLog": True})
+        lines = result.data["logLines"]
+        assert len(lines) == 200, len(lines)
+        assert result.data["logTruncated"] is True, result.data
+        assert "bulk 249" in lines[-1]["text"], lines[-1]
 
     def call_bad_args():
         exc = _expect(
@@ -209,9 +363,15 @@ def main():
     check("snake_case", snake_case)
     check("reflect_by_path", reflect_by_path)
     check("reflect_by_class", reflect_by_class)
+    check("reflect_bare_class_name_pie", reflect_bare_class_name_pie)
+    check("reflect_missing_candidates", reflect_missing_candidates)
     check("reflect_missing", reflect_missing)
     check("call_void", call_void)
     check("call_value", call_value)
+    check("capture_log_window_lines", capture_log_window_lines)
+    check("capture_log_absent_by_default", capture_log_absent_by_default)
+    check("capture_log_missing_file", capture_log_missing_file)
+    check("capture_log_truncates", capture_log_truncates)
     check("call_bad_args", call_bad_args)
     check("call_suggestions", call_suggestions)
     check("call_blocked", call_blocked)
@@ -225,6 +385,8 @@ def main():
             print("FAIL: %s" % failure)
         print("OBJECT_CALL_RESULT FAIL")
         return 1
+    shutil.rmtree(PROJECT_DIR, ignore_errors=True)
+    shutil.rmtree(EMPTY_PROJECT, ignore_errors=True)
     print("OBJECT_CALL_RESULT PASS")
     return 0
 

@@ -228,6 +228,7 @@ def main():
         assert stats["uniqueColors"] == 1, stats
         assert stats["nonZeroRatio"] == 1.0, stats
         assert stats["isBlack"] is False, stats
+        assert data["activation"] == {"requested": False}, data["activation"]
         assert CALLS and CALLS[0]["force_game_view"] is False, CALLS
 
     def black_stats():
@@ -249,6 +250,13 @@ def main():
         }
         data = drive(call(base_params(activateWindow=True))).data
         assert data["path"], data
+        activation = data["activation"]
+        assert activation["requested"] is True, activation
+        assert activation["ok"] is True, activation
+        assert activation["hwnd"] == 123, activation
+        assert activation["editorPid"] == os.getpid(), activation
+        assert activation["foregroundPid"] == os.getpid(), activation
+        assert activation["isIconic"] is False, activation
 
     def activate_fail():
         reset()
@@ -274,6 +282,9 @@ def main():
         viewport._IS_WINDOWS = False
         result = drive(call(base_params(activateWindow=True)))
         assert result.data["path"], result.data
+        activation = result.data["activation"]
+        assert activation["requested"] is True, activation
+        assert activation["ok"] is False, activation
         assert any("ACTIVATE_WINDOW_UNSUPPORTED" in w for w in result.warnings), result.warnings
 
     def timeout_partial():

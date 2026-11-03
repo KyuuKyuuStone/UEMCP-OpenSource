@@ -32,6 +32,10 @@ export const ViewportCaptureInput = z
       .default({ mode: "current" }),
     returnMode: z.enum(["image", "file"]).default("image"),
     hideEditorUI: z.boolean().default(true),
+    // D1（0.1.4 复测缺陷单）：Bridge 早已实现窗口置前，Server schema 缺该参数导致
+    // 正常 MCP 路径必现 INVALID_ARGUMENT: Unrecognized key(s): 'activateWindow'。
+    // 默认值与 Bridge 的 get_bool("activateWindow", default=False) 对齐。
+    activateWindow: z.boolean().default(false),
     timeoutMs: z.number().int().min(1000).max(30000).default(15000),
   })
   .strict();

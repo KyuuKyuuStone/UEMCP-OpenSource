@@ -8,21 +8,28 @@ and refuses dunder/private names plus Python/exec/eval/subprocess lookalikes.
 
 import inspect
 import json
+import os
 import re
+import time
 
 from ..errors import RpcError
 from . import (
     HandlerResult,
     actor_subsystem,
     check_keys,
+    get_bool,
     get_int,
     get_list,
     get_str,
     get_unreal,
 )
+from . import logs as logs_handler
 
 MAX_FUNCTIONS = 200
 MAX_ARGUMENTS = 64
+_CAPTURE_LOG_MAX_LINES = 200
+_CAPTURE_LOG_MAX_TEXT = 500
+_CAPTURE_LOG_MAX_MS = 200
 _BLOCKED_FRAGMENTS = ("python", "exec", "eval", "subprocess")
 _CAMEL_RE_1 = re.compile(r"(.)([A-Z][a-z]+)")
 _CAMEL_RE_2 = re.compile(r"([a-z0-9])([A-Z])")
@@ -51,6 +58,96 @@ def _class_name(obj):
         return type(obj).__name__
 
 
+def _scene_actors():
+    """Editor-world actors plus PIE-world actors (deduplicated by path)."""
+    unreal = get_unreal()
+    actors = []
+    seen = set()
+
+    def _add(values):
+        for actor in values or []:
+            try:
+                key = str(actor.get_path_name())
+            except Exception:
+                key = "id:%d" % id(actor)
+            if key in seen:
+                continue
+            seen.add(key)
+            actors.append(actor)
+
+    try:
+        _add(actor_subsystem().get_all_level_actors())
+    except Exception:
+        pass
+    try:
+        editor = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+        game_world = editor.get_game_world()
+        if game_world is not None:
+            _add(unreal.GameplayStatics.get_all_actors_of_class(game_world, unreal.Actor))
+    except Exception:
+        pass
+    return actors
+
+
+def _class_candidates(name):
+    """Loaded Python classes that may correspond to a bare class name."""
+    unreal = get_unreal()
+    found = []
+    attribute = getattr(unreal, name, None)
+    if isinstance(attribute, type):
+        found.append(attribute)
+    for loader_name in ("load_class", "find_class"):
+        loader = getattr(unreal, loader_name, None)
+        if not callable(loader):
+            continue
+        for candidate in (name, "/Script/Engine." + name):
+            try:
+                cls = loader(None, candidate)
+            except Exception:
+                continue
+            if isinstance(cls, type) and cls not in found:
+                found.append(cls)
+    if not found:
+        lowered = name.lower()
+        for attribute_name in dir(unreal):
+            if attribute_name.lower() != lowered:
+                continue
+            value = getattr(unreal, attribute_name, None)
+            if isinstance(value, type):
+                found.append(value)
+                break
+    return found
+
+
+def _target_candidates(target, actors):
+    """Readable full paths for a failed bare-name lookup (max 5)."""
+    lowered = target.lower()
+    scored = []
+    for actor in actors:
+        try:
+            path = str(actor.get_path_name())
+            class_name = str(actor.get_class().get_name()).lower()
+        except Exception:
+            continue
+        if class_name == lowered:
+            score = 0
+        elif class_name.startswith(lowered) or lowered.startswith(class_name):
+            score = 1
+        elif lowered in path.lower():
+            score = 2
+        else:
+            continue
+        scored.append((score, len(path), path))
+    scored.sort()
+    candidates = []
+    for _score, _length, path in scored:
+        if path not in candidates:
+            candidates.append(path)
+        if len(candidates) >= 5:
+            break
+    return candidates
+
+
 def _resolve_target(target):
     unreal = get_unreal()
     for loader_name in ("find_object", "load_object"):
@@ -64,11 +161,7 @@ def _resolve_target(target):
         if obj is not None:
             return obj
 
-    try:
-        actors = list(actor_subsystem().get_all_level_actors())
-    except Exception:
-        actors = []
-
+    actors = _scene_actors()
     for actor in actors:
         try:
             if str(actor.get_path_name()) == target:
@@ -77,10 +170,10 @@ def _resolve_target(target):
             continue
     for actor in actors:
         try:
-            class_names = {str(actor.get_class().get_name())}
+            class_name = str(actor.get_class().get_name())
         except Exception:
             continue
-        if target in class_names:
+        if class_name == target or class_name.lower() == target.lower():
             return actor
 
     try:
@@ -89,6 +182,16 @@ def _resolve_target(target):
             return asset
     except Exception:
         pass
+
+    # Bare class name: resolve the class (module attribute / load_class) and
+    # pick the first scene instance, including PIE-world actors.
+    for cls in _class_candidates(target):
+        for actor in actors:
+            try:
+                if isinstance(actor, cls):
+                    return actor
+            except Exception:
+                continue
     return None
 
 
@@ -151,6 +254,99 @@ def _suggestions(name, candidates, limit=5):
     return [candidate for _score, candidate in scored[:limit]]
 
 
+def _capture_log_path():
+    try:
+        project_dir = logs_handler._project_dir()
+        logs_dir = logs_handler._logs_dir(project_dir)
+        path = logs_handler._default_log_path(project_dir)
+        if not path:
+            return None
+        return logs_handler._safe_log_path(path, logs_dir)
+    except Exception:
+        return None
+
+
+def _capture_log_marker():
+    """Byte offset + line count before the call (captureLog window start)."""
+    marker = {"path": None, "offset": 0, "baseLine": 0, "failed": False}
+    path = _capture_log_path()
+    marker["path"] = path
+    if not path or not os.path.isfile(path):
+        return marker
+    started = time.monotonic()
+    try:
+        with open(path, "rb") as handle:
+            total = 0
+            newlines = 0
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                newlines += chunk.count(b"\n")
+                if (time.monotonic() - started) * 1000 > _CAPTURE_LOG_MAX_MS:
+                    marker["failed"] = True
+                    return marker
+            marker["offset"] = total
+            marker["baseLine"] = newlines
+    except OSError:
+        marker["failed"] = True
+    return marker
+
+
+def _capture_log_read(marker):
+    """Lines appended between the marker and now; never raises."""
+    if marker.get("failed"):
+        return [], False, ["CAPTURE_LOG_FAILED: log marker exceeded 200 ms"]
+    path = marker.get("path") or _capture_log_path()
+    if not path:
+        return [], False, ["CAPTURE_LOG_FAILED: log file not found"]
+    started = time.monotonic()
+    offset = int(marker.get("offset") or 0)
+    base = int(marker.get("baseLine") or 0)
+    chunk = b""
+    while True:
+        try:
+            with open(path, "rb") as handle:
+                size = os.fstat(handle.fileno()).st_size
+                if offset > size:
+                    # Log rotated/replaced during the call: read the new file.
+                    offset = 0
+                    base = 0
+                handle.seek(offset)
+                chunk = handle.read()
+        except OSError as exc:
+            return [], False, ["CAPTURE_LOG_FAILED: %s" % exc]
+        if chunk:
+            break
+        # The engine log writer is buffered; give it a moment to flush before
+        # concluding that the call produced no log lines.
+        if (time.monotonic() - started) * 1000 >= _CAPTURE_LOG_MAX_MS:
+            break
+        time.sleep(0.02)
+    if (time.monotonic() - started) * 1000 > _CAPTURE_LOG_MAX_MS and not chunk:
+        return [], False, []
+
+    text = chunk.decode("utf-8", "replace")
+    raw_lines = text.split("\n")
+    if raw_lines and raw_lines[-1] == "":
+        raw_lines.pop()
+    entries = []
+    for index, raw in enumerate(raw_lines, 1):
+        line = raw.rstrip("\r")
+        entries.append(
+            {
+                "lineNo": base + index,
+                "level": logs_handler._classify_level(line),
+                "text": line[:_CAPTURE_LOG_MAX_TEXT],
+            }
+        )
+    truncated = len(entries) > _CAPTURE_LOG_MAX_LINES
+    if truncated:
+        entries = entries[-_CAPTURE_LOG_MAX_LINES:]
+    return entries, truncated, []
+
+
 def handle_reflect(server, params):
     check_keys(params, {"target"})
     target = get_str(params, "target", required=True, min_length=1, max_length=512)
@@ -160,7 +356,10 @@ def handle_reflect(server, params):
         raise RpcError(
             "NOT_FOUND",
             "Object not found: %s" % target,
-            {"target": target},
+            {
+                "target": target,
+                "candidates": _target_candidates(target, _scene_actors()),
+            },
         )
 
     members = _callable_members(obj)
@@ -197,11 +396,12 @@ def _json_safe(value):
 
 
 def handle_call(server, params):
-    check_keys(params, {"target", "function", "args", "waitMs"})
+    check_keys(params, {"target", "function", "args", "waitMs", "captureLog"})
     target = get_str(params, "target", required=True, min_length=1, max_length=512)
     function = get_str(params, "function", required=True, min_length=1, max_length=128)
     args = get_list(params, "args", default=[], max_items=MAX_ARGUMENTS)
     get_int(params, "waitMs", default=5000, minimum=0, maximum=60000)
+    capture_log = get_bool(params, "captureLog", default=False)
 
     if not server.settings.allow_write:
         raise RpcError(
@@ -223,7 +423,11 @@ def handle_call(server, params):
         raise RpcError(
             "NOT_FOUND",
             "Object not found: %s" % target,
-            {"target": target, "function": name},
+            {
+                "target": target,
+                "function": name,
+                "candidates": _target_candidates(target, _scene_actors()),
+            },
         )
 
     candidates = [member[0] for member in _callable_members(obj)]
@@ -240,6 +444,7 @@ def handle_call(server, params):
         )
 
     expected = _param_count(attribute)
+    log_marker = _capture_log_marker() if capture_log else None
     try:
         value = attribute(*args)
     except TypeError as exc:
@@ -262,11 +467,16 @@ def handle_call(server, params):
             {"function": name, "target": target, "error": str(exc)},
         )
 
-    return HandlerResult(
-        {
-            "target": target,
-            "function": name,
-            "returned": _json_safe(value),
-            "returnedVoid": value is None,
-        }
-    )
+    data = {
+        "target": target,
+        "function": name,
+        "returned": _json_safe(value),
+        "returnedVoid": value is None,
+    }
+    warnings = []
+    if capture_log:
+        log_lines, log_truncated, log_warnings = _capture_log_read(log_marker)
+        data["logLines"] = log_lines
+        data["logTruncated"] = log_truncated
+        warnings.extend(log_warnings)
+    return HandlerResult(data, warnings)

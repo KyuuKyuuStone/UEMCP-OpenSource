@@ -981,6 +981,66 @@ test("sessions: UEMCP_MAX_SESSIONS env is honored like --max-sessions (C. config
   }
 });
 
+// ---------- D1 / D4（0.1.4 复测缺陷单）：viewport activateWindow 透传 + object.call captureLog 预留 ----------
+
+test("D1/D4: ue_viewport_capture passes activateWindow through (activation returned); ue_call_function forwards reserved captureLog only when set", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home, ["--allow-write"]);
+  const srv = startServer(
+    ["--port", "19168", "--policy", "standard", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home),
+  );
+  try {
+    await waitHealth(19168);
+    const sid = await initSession(19168);
+
+    // D1：0.1.4 里这里必现 INVALID_ARGUMENT: Unrecognized key(s): 'activateWindow'
+    const cap = await rpc(19168, sid, "ue_viewport_capture", { returnMode: "file", activateWindow: true }, 3);
+    assert.equal(
+      cap.body.result.isError,
+      false,
+      `D1 regression: activateWindow must be accepted, got ${JSON.stringify(SC(cap)?.error)}`,
+    );
+    assert.equal(SC(cap).data.received?.activateWindow, true, "activateWindow must reach the bridge");
+    assert.equal(SC(cap).data.activation?.requested, true, "activation block must be returned");
+    assert.equal(SC(cap).data.activation?.ok, true);
+    assert.equal(typeof SC(cap).data.activation?.editorPid, "number");
+
+    const capDefault = await rpc(19168, sid, "ue_viewport_capture", { returnMode: "file" }, 4);
+    assert.equal(capDefault.body.result.isError, false);
+    assert.equal(
+      SC(capDefault).data.received?.activateWindow,
+      false,
+      "default activateWindow=false is forwarded (mirrors bridge get_bool default)",
+    );
+
+    // D4 预留：显式 captureLog:true 透传到 bridge，logLines 原样回传（0.1.5 桥接契约）
+    const call = await rpc(
+      19168,
+      sid,
+      "ue_call_function",
+      { target: "StaticMeshActor_1", function: "set_actor_hidden", captureLog: true },
+      5,
+    );
+    assert.equal(call.body.result.isError, false, `captureLog must be accepted: ${JSON.stringify(SC(call)?.error)}`);
+    assert.equal(SC(call).data.received?.captureLog, true, "captureLog must reach the bridge when explicitly set");
+    assert.equal(Array.isArray(SC(call).data.logLines) && SC(call).data.logLines.length === 1, true, "logLines passthrough (D4 output shape tolerated by outputSchema)");
+    assert.ok(String(SC(call).data.logLines[0].text).includes("window line"));
+
+    // 不传 captureLog 时该键必须完全不出现在请求里（现桥接 check_keys 白名单不含它）
+    const plain = await rpc(19168, sid, "ue_call_function", { target: "StaticMeshActor_1", function: "get_actor_label" }, 6);
+    assert.equal(plain.body.result.isError, false);
+    assert.equal(
+      "captureLog" in (SC(plain).data.received ?? {}),
+      false,
+      "captureLog must not be defaulted into the request (current bridge rejects unknown keys)",
+    );
+  } finally {
+    await stop(srv.proc);
+    bridge.proc.kill();
+  }
+});
+
 after(async () => {
   for (const h of homes) {
     try {

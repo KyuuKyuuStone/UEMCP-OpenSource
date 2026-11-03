@@ -26,6 +26,7 @@ import {
   toolCodeFromJsonRpc,
   PythonExecInput,
   TOOL_OUTPUT_SCHEMAS,
+  callFunctionInputSchema,
 } from "../packages/shared/dist/index.js";
 
 // ---------- ue_viewport_capture schema ----------
@@ -40,6 +41,30 @@ test("viewport: defaults are target=level_viewport/1280x720/png/camera=current",
   assert.deepEqual(r.camera, { mode: "current" });
   assert.equal(r.returnMode, "image");
   assert.equal(r.hideEditorUI, true);
+  // D1：默认与 Bridge 的 get_bool("activateWindow", default=False) 对齐
+  assert.equal(r.activateWindow, false);
+});
+
+test("viewport: activateWindow accepted (D1) and strictly boolean", () => {
+  assert.equal(ViewportCaptureInput.parse({ activateWindow: true }).activateWindow, true);
+  assert.equal(ViewportCaptureInput.parse({ activateWindow: false }).activateWindow, false);
+  assert.equal(
+    ViewportCaptureInput.safeParse({ activateWindow: "yes" }).success,
+    false,
+    "activateWindow must be a boolean (strict)",
+  );
+});
+
+test("object.call: captureLog is reserved passthrough but NOT defaulted (D4; current bridge whitelist rejects unknown keys)", () => {
+  const noFlag = callFunctionInputSchema().parse({ target: "A", function: "f" });
+  assert.equal(
+    "captureLog" in noFlag,
+    false,
+    "captureLog must be absent unless explicitly set, otherwise the current bridge (check_keys: target/function/args/waitMs) rejects every call",
+  );
+  const withFlag = callFunctionInputSchema().parse({ target: "A", function: "f", captureLog: true });
+  assert.equal(withFlag.captureLog, true);
+  assert.equal(callFunctionInputSchema().safeParse({ target: "A", function: "f", captureLog: 1 }).success, false);
 });
 
 test("viewport: explicit camera accepted (location+rotation)", () => {

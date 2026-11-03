@@ -208,6 +208,17 @@ const ViewportCaptureData = looseObject({
   format: z.enum(["png", "jpeg"]).optional(),
   bytes: z.number().optional(),
   capturedAt: z.string().optional(),
+  // D1：activateWindow 请求时 Bridge 返回的置前信息（字段与 _activation_payload 对齐；
+  // 未请求时仅 {requested:false}）。
+  activation: looseObject({
+    requested: z.boolean().optional(),
+    ok: z.boolean().optional(),
+    alreadyForeground: z.boolean().optional(),
+    hwnd: z.number().optional(),
+    editorPid: z.number().optional(),
+    foregroundPid: z.number().optional(),
+    isIconic: z.boolean().optional(),
+  }).optional(),
   // 向前兼容：桥接直接返回 base64 时（tools/viewportCapture.ts CaptureData）
   base64Data: z.string().optional(),
 });
@@ -327,6 +338,16 @@ const CallFunctionData = looseObject({
   returned: z.unknown().optional(),
   returnedVoid: z.boolean().optional(),
   durationMs: z.number().optional(),
+  // D4 预留：captureLog:true 时 Bridge 返回调用窗口内抓到的日志行（0.1.5 落地）
+  logLines: z
+    .array(
+      looseObject({
+        lineNo: z.number().optional(),
+        level: z.string().optional(),
+        text: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const CallFunctionOutput = outputUnion(CallFunctionData);

@@ -32,7 +32,7 @@ export const viewportCaptureTool: ToolDef = {
   rpcMethod: "viewport.capture",
   title: "Capture Viewport Screenshot",
   description:
-    "Capture the level viewport or PIE as PNG/JPEG. returnMode=image inlines base64 (<= 8 MiB, read from the captured file on this machine) otherwise falls back to file path with a warning. Screenshots are written to <Project>/Saved/UEMCP/captures/ and audited.",
+    "Capture the level viewport or PIE as PNG/JPEG. activateWindow=true brings the editor window to the foreground first (mitigates UE throttling when unfocused; Windows only, returns an activation block) and defaults to false. returnMode=image inlines base64 (<= 8 MiB, read from the captured file on this machine) otherwise falls back to file path with a warning. Screenshots are written to <Project>/Saved/UEMCP/captures/ and audited.",
   timeoutMs: 45000,
   schemaFor(_p: PolicyState) {
     return ViewportCaptureInput;

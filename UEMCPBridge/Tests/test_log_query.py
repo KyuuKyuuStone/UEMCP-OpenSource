@@ -1,7 +1,9 @@
 """``log.query`` self-check (no editor required).
 
-Covers: newest project log selection, pattern/level/since filters, paging and
-truncation, invalid regex/length, and the realpath escape guard.
+Covers: newest project log selection, explicit/implicit level inference
+(``LogXxx: message`` lines are Log), pattern/level/since filters, unclassified
+counting, paging/truncation, invalid regex/length, and the realpath escape
+guard.
 """
 
 import os
@@ -25,6 +27,8 @@ LOG_LINES = [
     "[2026.10.30-05.00.02:000][  0]LogTemp: Error: boom",
     "[2026.10.30-05.00.03:000][  0]LogTemp: Log: plain line",
     "[2026.10.30-05.00.04:000][  0]LogTemp: Log: " + ("x" * 600),
+    "[2026.10.30-05.00.05:000][  0]LogMarker: Added POI E1A7AE80 to group MonitorPoint",
+    "[2026.10.30-05.00.06:000][  0]SomethingElse: Added POI without level marker",
 ]
 with open(os.path.join(LOGS_DIR, "UEMCP_TEXT_57.log"), "w", encoding="utf-8") as handle:
     handle.write("\n".join(LOG_LINES) + "\n")
@@ -81,24 +85,49 @@ def main():
         data = query({})
         assert data["logPath"].endswith("UEMCP_TEXT_57.log"), data["logPath"]
         assert os.path.isabs(data["logPath"]), data["logPath"]
-        assert data["scannedLines"] == 5, data
-        assert data["matched"] == 5, data
+        assert data["scannedLines"] == 7, data
+        assert data["matched"] == 7, data
+        assert data["unclassified"] == 1, data
         assert data["truncated"] is False, data
-        assert len(data["lines"]) == 5, data
+        assert len(data["lines"]) == 7, data
+
+    def implicit_log_line_matches_log_filter():
+        data = query({"pattern": "Added POI", "levels": ["Log"], "limit": 5})
+        assert data["matched"] == 1, data
+        line = data["lines"][0]
+        assert line["lineNo"] == 6, line
+        assert line["level"] == "Log", line
+        assert "LogMarker" in line["text"], line
+        assert data["unclassified"] == 1, data
+
+    def explicit_error_not_matched_by_log_filter():
+        data = query({"pattern": "boom", "levels": ["Log"]})
+        assert data["matched"] == 0, data
+        data = query({"pattern": "boom", "levels": ["Error"]})
+        assert data["matched"] == 1, data
+        assert data["lines"][0]["level"] == "Error", data
+
+    def level_filter_log_count():
+        data = query({"levels": ["Log"]})
+        assert data["matched"] == 3, data
+        assert all(line["level"] == "Log" for line in data["lines"]), data
+        assert data["unclassified"] == 1, data
+
+    def unclassified_without_levels():
+        data = query({"pattern": "Added POI"})
+        assert data["matched"] == 2, data
+        assert data["unclassified"] == 1, data
+        levels = [line["level"] for line in data["lines"]]
+        assert levels == ["Log", None], levels
 
     def pattern_filter():
         data = query({"pattern": "second location"})
         assert data["matched"] == 1, data
         assert "second location" in data["lines"][0]["text"], data
 
-    def level_filter():
-        data = query({"levels": ["Error"]})
-        assert data["matched"] == 1, data
-        assert data["lines"][0]["level"] == "Error", data
-
     def since_filter():
         data = query({"since": "2026-10-30T05:00:03"})
-        assert data["matched"] == 2, data
+        assert data["matched"] == 4, data
 
     def paging():
         data = query({"limit": 2, "offset": 1})
@@ -134,8 +163,11 @@ def main():
             Paths.project = PROJECT_DIR
 
     check("default_log_and_path", default_log_and_path)
+    check("implicit_log_line_matches_log_filter", implicit_log_line_matches_log_filter)
+    check("explicit_error_not_matched_by_log_filter", explicit_error_not_matched_by_log_filter)
+    check("level_filter_log_count", level_filter_log_count)
+    check("unclassified_without_levels", unclassified_without_levels)
     check("pattern_filter", pattern_filter)
-    check("level_filter", level_filter)
     check("since_filter", since_filter)
     check("paging", paging)
     check("text_truncation", text_truncation)

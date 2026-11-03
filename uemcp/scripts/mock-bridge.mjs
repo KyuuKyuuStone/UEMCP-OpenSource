@@ -219,9 +219,16 @@ function dispatch(method, params, meta = {}) {
       const snake = fn.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
       if (snake.startsWith("_") || /python|exec|eval|subprocess/.test(snake))
         return { __err: rpcErrTemplate("PERMISSION_DENIED", -32003, "function name is blocked", { blocked: true }) };
+      // D4 预留透传的回显：captureLog:true 时返回调用窗口内的日志行（镜像 0.1.5 契约），
+      // received 回显参数确保「Server 真的把 captureLog 透传给了 Bridge」可断言。
+      const captureLog = params.captureLog === true;
+      const captured = captureLog
+        ? [{ lineNo: 900, level: "Log", text: "LogTemp: ue_call_function window line" }]
+        : undefined;
+      const received = { captureLog: params.captureLog };
       if (snake === "set_actor_hidden" || snake === "fly_to_monitor_point")
-        return ok({ target: params.target, function: snake, returned: null, returnedVoid: true, durationMs: 1 });
-      return ok({ target: params.target, function: snake, returned: "StaticMeshActor_1", returnedVoid: false, durationMs: 1 });
+        return ok({ target: params.target, function: snake, returned: null, returnedVoid: true, durationMs: 1, received, ...(captured ? { logLines: captured } : {}) });
+      return ok({ target: params.target, function: snake, returned: "StaticMeshActor_1", returnedVoid: false, durationMs: 1, received, ...(captured ? { logLines: captured } : {}) });
     }
     case "log.query": {
       const seed = [
@@ -301,6 +308,20 @@ function dispatch(method, params, meta = {}) {
         format: params.format ?? "png",
         bytes,
         capturedAt: new Date().toISOString(),
+        // D1：镜像真实桥接的 activation 块（_activation_payload 字段），并回显收到的
+        // activateWindow，供断言「参数真的从 Server 到达 Bridge」。
+        received: { activateWindow: params.activateWindow },
+        activation: params.activateWindow
+          ? {
+              requested: true,
+              ok: true,
+              alreadyForeground: false,
+              hwnd: 1234,
+              editorPid: process.pid,
+              foregroundPid: process.pid,
+              isIconic: false,
+            }
+          : { requested: false },
       });
     }
     case "console.command": {

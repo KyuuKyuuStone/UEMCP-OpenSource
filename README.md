@@ -36,13 +36,13 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 | `ue_level_control` | 查询当前关卡与脏包；打开/保存/新建关卡 | 是（写动作 standard 起） |
 | `ue_asset_search` | 按路径/名称/类搜索资产；查询依赖与反向引用 | 是 |
 | `ue_material_params` | 读取材质/实例参数；设置材质实例参数；创建实例 | 是（写动作 standard 起） |
-| `ue_viewport_capture` | 截取关卡视口或 PIE 画面（PNG/JPEG）；支持 `activateWindow` 置前校验，返回**绝对路径** + `sha256` + `stats`（可自判空图） | 是 |
+| `ue_viewport_capture` | 截取关卡视口或 PIE 画面（PNG/JPEG）；`activateWindow`（**默认 false**，不传则不置前）开启后置前并校验前台，失败**立即** `EDITOR_UNSAFE_STATE` 而非干等超时；返回**绝对路径** + `sha256` + `stats`（可自判空图） | 是 |
 | `ue_blueprint` | 查询蓝图结构（父类/生成类/类型/命名图）；触发编译（变量与节点数受引擎限制，见已知限制） | 是 |
 | `ue_pie_control` | 启停 PIE：`start`/`stop`/`restart`/`status`，可选 `simulate`；**不再需要 `--allow-exec`**（写动作走 `allowWrite`） | 是（只读下仅 `status`） |
 | `ue_policy_explain` | 列出每个工具在当前策略下是否可见及原因（`server.policy` / `--allow-console` / `--allow-exec`） | 是 |
 | `ue_reflect` | 反射任意对象/关卡 Actor 上**可调用的函数清单**（名字、参数个数），替代「grep 源码才知道有哪些命令」 | 是 |
-| `ue_call_function` | **按名调用任意 `BlueprintCallable` 函数**，JSON 传参，返回其返回值（`void` 返回 `returnedVoid:true`）；通用能力，不需要使用者改自己的框架 | standard 起（需 Bridge `allowWrite`） |
-| `ue_log_query` | 按正则/级别/时间窗检索编辑器日志，返回命中行与行号；只能读本工程 `Saved/Logs/` | 是 |
+| `ue_call_function` | **按名调用任意 `BlueprintCallable` 函数**，JSON 传参；有返回值直接回，`void` 返回 `returnedVoid:true` 并可用 `captureLog:true` 拿调用窗口日志（`logLines`）；通用能力，不需要使用者改自己的框架 | standard 起（需 Bridge `allowWrite`） |
+| `ue_log_query` | 按正则/级别/时间窗检索编辑器日志，返回命中行与行号；只能读本工程 `Saved/Logs/`。级别规则：显式 `: Error:`/`: Warning:` 等段优先，`LogXxx:` 隐式行视为 `Log`，无法判定则 `level=null`（不计入 levels 过滤，带 `unclassified` 计数） | 是 |
 | `ue_console_command` | 执行控制台命令（白名单限制） | **默认隐藏** |
 | `ue_python_exec` | 在编辑器游戏线程执行 Python（无沙箱） | **默认隐藏** |
 
@@ -340,13 +340,13 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 | `ue_level_control` | Inspect the current level and dirty packages; open, save or create levels | Yes (write actions: standard and above) |
 | `ue_asset_search` | Search assets by path, name or class; query dependencies and referencers | Yes |
 | `ue_material_params` | Read material and material-instance parameters; set instance parameters; create instances | Yes (write actions: standard and above) |
-| `ue_viewport_capture` | Capture the level viewport or the PIE frame (PNG/JPEG); `activateWindow` verifies the foreground window and the result carries an **absolute path** + `sha256` + `stats` (self-detect blank frames) | Yes |
+| `ue_viewport_capture` | Capture the level viewport or the PIE frame (PNG/JPEG); `activateWindow` (**default false** — no activation unless requested) restores and verifies the foreground window and fails **fast** with `EDITOR_UNSAFE_STATE` instead of waiting for the timeout; the result carries an **absolute path** + `sha256` + `stats` (self-detect blank frames) | Yes |
 | `ue_blueprint` | Inspect Blueprint structure (parent class, generated class, type, named graphs); trigger a compile (variables and node counts are engine-limited, see known limitations) | Yes |
 | `ue_pie_control` | Control Play-In-Editor: `start` / `stop` / `restart` / `status`, optional `simulate`; **no longer needs `--allow-exec`** (write actions use `allowWrite`) | Yes (read-only: `status` only) |
 | `ue_policy_explain` | List every tool's visibility under the current policy and why (`server.policy` / `--allow-console` / `--allow-exec`) | Yes |
 | `ue_reflect` | Reflect the **callable functions** exposed by any object or level actor (names, parameter counts) — replaces "grep the source to find out which commands exist" | Yes |
-| `ue_call_function` | **Call any `BlueprintCallable` function by name**, passing JSON arguments and returning its return value (`returnedVoid:true` for void functions). Generic: requires no change to your own framework | standard and above (needs bridge `allowWrite`) |
-| `ue_log_query` | Search the editor log by regex / level / time window and return matched lines with line numbers; restricted to this project's `Saved/Logs/` | Yes |
+| `ue_call_function` | **Call any `BlueprintCallable` function by name** with JSON arguments; non-void functions return their return value, `void` functions return `returnedVoid:true` and accept `captureLog:true` to also receive the in-call log window (`logLines`). Generic: requires no change to your own framework | standard and above (needs bridge `allowWrite`) |
+| `ue_log_query` | Search the editor log by regex / level / time window and return matched lines with line numbers; restricted to this project's `Saved/Logs/`. Level rule: explicit `: Error:` / `: Warning:` segments win, implicit `LogXxx:` lines count as `Log`, otherwise `level=null` (excluded from `levels` filtering; reported via `unclassified`) | Yes |
 | `ue_console_command` | Run console commands (allowlist-restricted) | **Hidden** |
 | `ue_python_exec` | Run Python on the editor game thread (no sandbox) | **Hidden** |
 
