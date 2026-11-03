@@ -88,11 +88,11 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 
 ### 下载
 
-当前版本 **v0.1.4**，四个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
+当前版本 **v0.1.5**，四个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
 
-- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.4/UEMCPBridge-5.4.zip>
-- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.4/UEMCPBridge-5.7.zip>
-- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.4/SHA256SUMS.txt>
+- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.4.zip>
+- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.7.zip>
+- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/SHA256SUMS.txt>
 
 安装三步：
 
@@ -142,11 +142,11 @@ curl -s http://127.0.0.1:18778/health
 
 前置：Node.js ≥ 20。该包**未发布到 npm registry**（`npm view @uemcp/server` 返回 404 属预期），只能从 Release 附件下载。
 
-1. 从最新 Release 下载 [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.4/uemcp-server-0.1.0.tgz)（687,534 B；SHA256 `5D85FDAE…`，完整值见 `SHA256SUMS.txt` 第三行）。
+1. 从最新 Release 下载 [`uemcp-server-0.1.5.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/uemcp-server-0.1.5.tgz)（709,310 B；SHA256 `b8f14de98496d0c8f7b15ff35e4e30200f1226df827c043ce9d0a95ad9da6c29`，完整值见 `SHA256SUMS.txt` 第三行）。
 2. 全局安装（纯本地，不访问 registry）：
 
 ```bash
-npm install -g ./uemcp-server-0.1.0.tgz
+npm install -g ./uemcp-server-0.1.5.tgz
 ```
 
 3. 启动并自检：
@@ -392,11 +392,11 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 
 ### Download
 
-Current release: **v0.1.4**, four assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
+Current release: **v0.1.5**, four assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
 
-- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.4/UEMCPBridge-5.4.zip>
-- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.4/UEMCPBridge-5.7.zip>
-- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.4/SHA256SUMS.txt>
+- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.4.zip>
+- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.7.zip>
+- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/SHA256SUMS.txt>
 
 Install in three steps:
 
@@ -446,11 +446,11 @@ Before pointing it at a production project, work through this list in order:
 
 Requires Node.js ≥ 20. This package is **not published to the npm registry** — `npm view @uemcp/server` returning 404 is expected; download it from the Release assets only.
 
-1. Download [`uemcp-server-0.1.0.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.4/uemcp-server-0.1.0.tgz) from the latest Release (687,534 B; SHA256 `5D85FDAE…`, full value on the third line of `SHA256SUMS.txt`).
+1. Download [`uemcp-server-0.1.5.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/uemcp-server-0.1.5.tgz) from the latest Release (709,310 B; SHA256 `b8f14de98496d0c8f7b15ff35e4e30200f1226df827c043ce9d0a95ad9da6c29`, full value on the third line of `SHA256SUMS.txt`).
 2. Install it globally (purely local, no registry access):
 
 ```bash
-npm install -g ./uemcp-server-0.1.0.tgz
+npm install -g ./uemcp-server-0.1.5.tgz
 ```
 
 3. Start it and check the health endpoint:
