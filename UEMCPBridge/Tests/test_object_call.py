@@ -56,6 +56,12 @@ class FakeActor(BaseActor):
     def run_python_code(self):
         return "nope"
 
+    def execute_console_command(self, command):
+        return "ran:%s" % command
+
+    def raise_type_error_in_body(self, value):
+        return value + 1  # TypeError when value is None
+
     def _private(self):
         return "nope"
 
@@ -306,6 +312,70 @@ def main():
         assert exc.details["expectedParamCount"] == 2, exc.details
         assert exc.details["gotParamCount"] == 1, exc.details
         assert "error" in exc.details, exc.details
+        assert "phase" not in exc.details, exc.details
+
+    def call_in_body_type_error():
+        exc = _expect(
+            "EXECUTION_ERROR",
+            lambda: call({"target": "MyActor", "function": "raise_type_error_in_body", "args": [None]}),
+        )
+        assert exc.details.get("phase") == "in-body", exc.details
+        assert exc.details.get("function") == "raise_type_error_in_body", exc.details
+        assert exc.details.get("target") == "MyActor", exc.details
+        assert "error" in exc.details, exc.details
+
+    def call_unverified_signature():
+        class Holder(object):
+            pass
+
+        holder = Holder()
+
+        def boom(value):
+            raise TypeError("unverified in-body")
+
+        holder.boom = boom
+        original_resolve = objects._resolve_target
+        original_signature = objects.inspect.signature
+
+        def _no_signature(*_args, **_kwargs):
+            raise TypeError("no signature")
+
+        objects._resolve_target = lambda target: holder
+        objects.inspect.signature = _no_signature
+        try:
+            exc = _expect(
+                "INVALID_ARGUMENT",
+                lambda: call({"target": "Holder", "function": "boom", "args": [1]}),
+            )
+        finally:
+            objects._resolve_target = original_resolve
+            objects.inspect.signature = original_signature
+        assert exc.details.get("unverifiedSignature") is True, exc.details
+        assert "phase" not in exc.details, exc.details
+
+    def blacklist_rule_units():
+        cases = {
+            "exec": "exact:exec",
+            "Exec": "exact:exec",
+            "Python": "exact:python",
+            "py": "exact:py",
+            "__import__": "exact:__import__",
+            "python_path": "prefix:python_",
+            "py_run": "prefix:py_",
+            "subprocess_run": "prefix:subprocess",
+            "exec_flush": "prefix:exec_",
+            "runpython_thing": "prefix:runpython",
+            "execpython_thing": "prefix:execpython",
+            "_private": "leading_underscore",
+            "execute_console_command": None,
+        }
+        for name, rule in cases.items():
+            assert objects._blocked_rule(name) == rule, (name, rule, objects._blocked_rule(name))
+
+    def call_blocked_allowlist():
+        data = call({"target": "MyActor", "function": "execute_console_command", "args": ["stat unit"]}).data
+        assert data["returned"] == "ran:stat unit", data
+        assert data["returnedVoid"] is False, data
 
     def call_suggestions():
         exc = _expect(
@@ -315,12 +385,24 @@ def main():
         assert "sum_two" in exc.details["suggestions"], exc.details
 
     def call_blocked():
-        for name in ("_private", "run_python_code", "eval_thing", "subprocess_run"):
+        for name in (
+            "_private",
+            "exec",
+            "Python",
+            "python_path",
+            "py_run",
+            "subprocess_run",
+            "exec_flush",
+            "runpython_thing",
+            "execpython_thing",
+        ):
             exc = _expect(
                 "PERMISSION_DENIED",
                 lambda n=name: call({"target": "MyActor", "function": n}),
             )
             assert exc.details.get("blocked") is True, exc.details
+            assert exc.details.get("matchedRule"), (name, exc.details)
+            assert exc.details.get("reason") == "blacklisted_name", exc.details
 
     def gate():
         try:
@@ -373,6 +455,10 @@ def main():
     check("capture_log_missing_file", capture_log_missing_file)
     check("capture_log_truncates", capture_log_truncates)
     check("call_bad_args", call_bad_args)
+    check("call_in_body_type_error", call_in_body_type_error)
+    check("call_unverified_signature", call_unverified_signature)
+    check("blacklist_rule_units", blacklist_rule_units)
+    check("call_blocked_allowlist", call_blocked_allowlist)
     check("call_suggestions", call_suggestions)
     check("call_blocked", call_blocked)
     check("gate", gate)

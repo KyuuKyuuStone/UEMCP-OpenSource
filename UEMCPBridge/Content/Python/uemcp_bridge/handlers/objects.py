@@ -30,7 +30,8 @@ MAX_ARGUMENTS = 64
 _CAPTURE_LOG_MAX_LINES = 200
 _CAPTURE_LOG_MAX_TEXT = 500
 _CAPTURE_LOG_MAX_MS = 200
-_BLOCKED_FRAGMENTS = ("python", "exec", "eval", "subprocess")
+_BLOCKED_EXACT = ("exec", "eval", "execfile", "compile", "__import__", "python", "py")
+_BLOCKED_PREFIXES = ("python_", "py_", "subprocess", "exec_", "runpython", "execpython")
 _CAMEL_RE_1 = re.compile(r"(.)([A-Z][a-z]+)")
 _CAMEL_RE_2 = re.compile(r"([a-z0-9])([A-Z])")
 
@@ -44,11 +45,22 @@ def _to_snake(name):
     return converted.lower()
 
 
-def _is_blocked(name):
-    lowered = name.lower()
-    if name.startswith("_"):
-        return True
-    return any(fragment in lowered for fragment in _BLOCKED_FRAGMENTS)
+def _blocked_rule(function):
+    """Return the matched blacklist rule for *function*, or ``None``.
+
+    Matching is case-insensitive and exact/prefix based instead of a substring
+    scan, so ordinary names that merely contain a blocked word (e.g.
+    ``execute_console_command``) remain callable.
+    """
+    lowered = _to_snake(function).lower()
+    if lowered in _BLOCKED_EXACT:
+        return "exact:%s" % lowered
+    for prefix in _BLOCKED_PREFIXES:
+        if lowered.startswith(prefix):
+            return "prefix:%s" % prefix
+    if function.startswith("_") or lowered.startswith("_"):
+        return "leading_underscore"
+    return None
 
 
 def _class_name(obj):
@@ -411,11 +423,17 @@ def handle_call(server, params):
         )
 
     name = _to_snake(function)
-    if _is_blocked(name):
+    matched_rule = _blocked_rule(function)
+    if matched_rule:
         raise RpcError(
             "PERMISSION_DENIED",
             "Function is blocked by the reflection blacklist",
-            {"function": name, "blocked": True, "reason": "blacklisted_name"},
+            {
+                "function": name,
+                "blocked": True,
+                "reason": "blacklisted_name",
+                "matchedRule": matched_rule,
+            },
         )
 
     obj = _resolve_target(target)
@@ -445,9 +463,45 @@ def handle_call(server, params):
 
     expected = _param_count(attribute)
     log_marker = _capture_log_marker() if capture_log else None
+
+    # Argument-binding TypeError is raised before the callee body runs; bind
+    # the signature first so a TypeError from inside the body is not reported
+    # as INVALID_ARGUMENT.  When the signature cannot be introspected there is
+    # no way to tell the two apart, so keep the old mapping and flag it.
+    signature = None
+    try:
+        signature = inspect.signature(attribute)
+    except (TypeError, ValueError):
+        signature = None
+    if signature is not None:
+        try:
+            signature.bind(*args)
+        except TypeError as exc:
+            raise RpcError(
+                "INVALID_ARGUMENT",
+                "Arguments do not match %s: %s" % (name, exc),
+                {
+                    "function": name,
+                    "expectedParamCount": expected,
+                    "gotParamCount": len(args),
+                    "error": str(exc),
+                },
+            )
+
     try:
         value = attribute(*args)
     except TypeError as exc:
+        if signature is not None:
+            raise RpcError(
+                "EXECUTION_ERROR",
+                "Calling %s failed: %s" % (name, exc),
+                {
+                    "function": name,
+                    "target": target,
+                    "error": str(exc),
+                    "phase": "in-body",
+                },
+            )
         raise RpcError(
             "INVALID_ARGUMENT",
             "Arguments do not match %s: %s" % (name, exc),
@@ -456,6 +510,7 @@ def handle_call(server, params):
                 "expectedParamCount": expected,
                 "gotParamCount": len(args),
                 "error": str(exc),
+                "unverifiedSignature": True,
             },
         )
     except RpcError:
