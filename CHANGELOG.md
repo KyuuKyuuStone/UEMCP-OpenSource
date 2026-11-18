@@ -4,6 +4,33 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-11-18
+
+### Changed
+
+- Version bump 0.1.5 → 0.1.6: `SERVER_VERSION` (`uemcp/packages/server/src/mcp/buildServer.ts`, flows into `serverInfo.version` and `/health`) and `packages/server/package.json`; the offline artifact is now `uemcp-server-0.1.6.tgz`, named by `scripts/pack-server.ps1 -Version 0.1.6` (the artifact name comes from the script's `-Version` parameter, not from `package.json`). The root README (CN and EN) download links, tgz file name and install command now point at the v0.1.6 release assets.
+- Documentation synced with the 0.1.5 second-batch acceptance: root README and `uemcp/README-DEV.md` self-test counts corrected (smoke 87/87, `node --test` 82 cases; `outputSchema` registration documented as delivered), and `docs/UEMCP-架构设计.md` §6.5 audit-retention wording now matches shipped behaviour (`RETENTION_DAYS = 30` fixed constant, not configurable).
+
+### Fixed
+
+Server-side items from the 0.1.5 second batch — all present in this release and covered by the four release gates (build / typecheck / test / smoke) run on this tree:
+
+- Bridge watchdog: on a transport drop the server keeps the last-known bridge identity (`instanceId` / `buildHash` / `buildTime` / `sourcePath` / `capabilities` / `rateLimit` / `policies` / `bridgeProtocol` / `schemaVersion`) instead of silently clearing it; `markDown` clears the cache completely so no stale data is ever presented as current.
+- Audit records now carry the bridge error provenance (`origin` / `stage`), an effective-policy snapshot (`policySnapshot`: server mode/source/switches plus bridge policies and rate limit), the discovery `schemaVersion`, and — while a bridge connection is up — the bridge build identity; read-only tool calls are audited like every other tool; the `initialize` handler backfills `clientInfo`, fixing the previously always-absent `client` field; stdio records carry no `sessionId` (HTTP only).
+- Audit retention is the fixed `RETENTION_DAYS = 30` constant, purged at startup; 3 consecutive audit-write failures now also warn on stderr, in addition to flagging `auditDegraded=true` in `/health`.
+- Discovery files gained `stale` / `staleReason` / `staleAt`; an unexpected `schemaVersion` logs a `discovery_schema_version_mismatch` warning instead of being silently accepted; `/health` passes the extended fields through.
+- `viewport.capture`: the server bounds the call at 20 s and pre-checks the pixel-streaming capability, returning `CAPABILITY_UNAVAILABLE` when the environment cannot serve it.
+- Tool `outputSchema`: `registerTools` publishes the success/failure dual-shape schema for every visible tool (asserted by the smoke policy matrix and a regression test).
+
+> 以下四条来自业务团队《UEMCP v0.1.4 复测缺陷单》（编号 D1–D4）。**代码修复随 0.1.6 合入，合入后复核**——下列条目描述的是修复后的行为。
+>
+> The four entries below come from the business team's v0.1.4 defect report (D1–D4). **The code fixes land with 0.1.6 and have been re-verified after merge** — the entries below describe the fixed behaviour.
+
+- **D1**: `ue_viewport_capture` now passes `activateWindow` through to the bridge (the 0.1.4 server schema rejected it with `INVALID_ARGUMENT: Unrecognized key`, so the parameter only worked when calling the bridge port directly). A successful capture returns `activation{requested, ok, editorPid, foregroundPid, hwnd, isIconic, alreadyForeground}`.
+- **D2**: `log.query` level inference now recognises implicit `LogXxx:` lines (no explicit `: Error:` / `: Warning:` / `: Display:` / `: Verbose:` segment → counted as `Log`); lines that match no rule keep `level=null` and are excluded from `levels` filtering, and the response reports an `unclassified` count. In 0.1.4, `levels:["Log"]` silently missed implicit `LogXxx:` lines (`matched 0`).
+- **D3**: `object.reflect` resolves bare class names (e.g. `CustomDomainCmdHandler`) via derived-class/instance search instead of requiring a full object path; on failure the error carries `candidates` with the matched full paths.
+- **D4**: `object.call` accepts `captureLog:true` — the call returns the log lines captured inside the call window (`logLines[{lineNo, level, text}]`), so `void` functions no longer leave the caller with only `{"returned":null,"returnedVoid":true}`.
+
 ## [0.1.4] - 2026-10-30
 
 Plugin and server now share the version number (`0.1.4`), and `/health` reports `buildHash` / `sourcePath` so an upgrade can be verified instead of assumed.
@@ -50,14 +77,6 @@ Plugin and server now share the version number (`0.1.4`), and `/health` reports 
 
 ### Fixed
 
-> 以下四条来自业务团队《UEMCP v0.1.4 复测缺陷单》（编号 D1–D4）。**代码修复随 0.1.5 合入，合入后复核**——在包含修复的包发布之前，本节描述的是修复后的目标行为，不是当前已发布包的行为。
->
-> The four entries below come from the business team's v0.1.4 defect report (D1–D4). **The code fixes land with 0.1.5 and will be re-verified after merge** — until a package containing them ships, this section describes the target behaviour, not the currently released packages.
-
-- **D1**: `ue_viewport_capture` now passes `activateWindow` through to the bridge (the 0.1.4 server schema rejected it with `INVALID_ARGUMENT: Unrecognized key`, so the parameter only worked when calling the bridge port directly). A successful capture returns `activation{requested, ok, editorPid, foregroundPid, hwnd, isIconic, alreadyForeground}`.
-- **D2**: `log.query` level inference now recognises implicit `LogXxx:` lines (no explicit `: Error:` / `: Warning:` / `: Display:` / `: Verbose:` segment → counted as `Log`); lines that match no rule keep `level=null` and are excluded from `levels` filtering, and the response reports an `unclassified` count. In 0.1.4, `levels:["Log"]` silently missed implicit `LogXxx:` lines (`matched 0`).
-- **D3**: `object.reflect` resolves bare class names (e.g. `CustomDomainCmdHandler`) via derived-class/instance search instead of requiring a full object path; on failure the error carries `candidates` with the matched full paths.
-- **D4**: `object.call` accepts `captureLog:true` — the call returns the log lines captured inside the call window (`logLines[{lineNo, level, text}]`), so `void` functions no longer leave the caller with only `{"returned":null,"returnedVoid":true}`.
 - `viewport.capture` no longer blocks until the server-side 45 s timeout: the bridge now bounds the capture itself, reports `CAPTURE_TIMEOUT` with render-environment diagnostics, and stops forcing the game view. Root cause confirmed as UE throttling ticks (~3 fps) while the editor window is minimized or unfocused — foreground capture was measured at 132–976 ms.
 - `blueprint.query` no longer returns an "empty success": when parent class, variables and graphs are all empty the handler raises `UNSUPPORTED` with per-property diagnostics. Reading blueprint structure still depends on engine Python exposure and remains unreliable.
 - `blueprint.query` now reads real structure where the engine allows it: `parentClass`, `generatedClass` and `blueprintType` come from Asset Registry tags (verified on 5.4.4: `Actor`), and `EventGraph` / `UserConstructionScript` / `AnimGraph` are discovered through `BlueprintEditorLibrary.find_graph`. `variables` stay unavailable because `UBlueprint.NewVariables` is a protected property — the response now says `variablesUnavailable=NEW_VARIABLES_PROTECTED_IN_ENGINE_PYTHON` instead of returning an empty list.

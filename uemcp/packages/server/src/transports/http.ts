@@ -270,6 +270,15 @@ export function startHttp(
         ...(w.ueVersion ? { ueVersion: w.ueVersion } : {}),
         ...(w.pluginVersion ? { pluginVersion: w.pluginVersion } : {}),
         ...(w.projectDir ? { projectDir: w.projectDir } : {}),
+        // B-3.1/B-3.9：透传 watchdog 保留的 /health 实际值（构建身份/能力位/协议/
+        // schemaVersion）；桥接过渡期缺失容忍——未返回即不出现，断连时全部清除。
+        ...(w.instanceId ? { instanceId: w.instanceId } : {}),
+        ...(w.buildHash ? { buildHash: w.buildHash } : {}),
+        ...(w.buildTime ? { buildTime: w.buildTime } : {}),
+        ...(w.sourcePath ? { sourcePath: w.sourcePath } : {}),
+        ...(w.capabilities ? { capabilities: w.capabilities } : {}),
+        ...(w.bridgeProtocol !== undefined ? { bridgeProtocol: w.bridgeProtocol } : {}),
+        ...(w.schemaVersion !== undefined ? { schemaVersion: w.schemaVersion } : {}),
       },
       ...(audit.degraded ? { auditDegraded: true } : {}),
     });

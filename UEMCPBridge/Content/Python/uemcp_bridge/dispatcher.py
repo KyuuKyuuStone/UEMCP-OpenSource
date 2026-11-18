@@ -21,7 +21,15 @@ class DispatcherBusy(Exception):
 
 
 class DispatcherTimeout(Exception):
-    """The job did not finish before the caller's timeout."""
+    """The job did not finish before the caller's timeout.
+
+    ``timeout_ms`` carries the budget that actually expired (batch 2) so the
+    HTTP layer can report the real value instead of the configured default.
+    """
+
+    def __init__(self, message, timeout_ms=None):
+        super(DispatcherTimeout, self).__init__(message)
+        self.timeout_ms = timeout_ms
 
 
 class Pending(object):
@@ -45,15 +53,21 @@ class Done(object):
 
 
 class _Job(object):
-    __slots__ = ("fn", "done", "result", "error", "cancelled", "deadline")
+    __slots__ = (
+        "fn", "done", "result", "error", "cancelled", "deadline",
+        "enqueued_at", "queued_ms", "timeout_ms",
+    )
 
-    def __init__(self, fn, deadline):
+    def __init__(self, fn, deadline, enqueued_at=None, timeout_ms=None):
         self.fn = fn
         self.done = threading.Event()
         self.result = None
         self.error = None
         self.cancelled = False
         self.deadline = deadline
+        self.enqueued_at = time.monotonic() if enqueued_at is None else enqueued_at
+        self.queued_ms = None  # measured at dequeue; None until then
+        self.timeout_ms = timeout_ms
 
 
 class GameThreadDispatcher(object):
@@ -75,20 +89,33 @@ class GameThreadDispatcher(object):
 
     # -- HTTP-thread side -------------------------------------------------
 
-    def call(self, fn, timeout_s):
+    def call(self, fn, timeout_s, meta=None):
+        """Run ``fn`` on the game thread and wait up to ``timeout_s``.
+
+        ``meta`` (optional dict) receives ``queuedMs``: the real measured
+        enqueue->dequeue wait in milliseconds, or ``None`` when the job never
+        reached the queue head before the response was sent.  Never fabricated.
+        """
         if self._shutting_down:
             raise DispatcherBusy("dispatcher is shutting down")
-        deadline = time.monotonic() + max(0.1, float(timeout_s))
-        job = _Job(fn, deadline)
+        now = time.monotonic()
+        timeout_ms = int(float(timeout_s) * 1000)
+        deadline = now + max(0.1, float(timeout_s))
+        job = _Job(fn, deadline, enqueued_at=now, timeout_ms=timeout_ms)
         try:
             self._queue.put(job, timeout=0.5)
         except queue.Full:
             raise DispatcherBusy("game-thread queue is full")
         if not job.done.wait(timeout_s):
             job.cancelled = True
+            if meta is not None:
+                meta["queuedMs"] = job.queued_ms
             raise DispatcherTimeout(
-                "game-thread job timed out after %.1fs" % float(timeout_s)
+                "game-thread job timed out after %.1fs" % float(timeout_s),
+                timeout_ms=timeout_ms,
             )
+        if meta is not None:
+            meta["queuedMs"] = job.queued_ms
         if job.error is not None:
             raise job.error
         return job.result
@@ -106,12 +133,17 @@ class GameThreadDispatcher(object):
         except queue.Empty:
             return
 
+        # Real enqueue->dequeue wait, measured on the game thread (batch 2).
+        job.queued_ms = max(0, int((time.monotonic() - job.enqueued_at) * 1000))
+
         if job.cancelled:
             job.done.set()
             return
 
         if time.monotonic() > job.deadline:
-            job.error = DispatcherTimeout("job expired before execution")
+            job.error = DispatcherTimeout(
+                "job expired before execution", timeout_ms=job.timeout_ms
+            )
             job.done.set()
             return
 
@@ -123,6 +155,11 @@ class GameThreadDispatcher(object):
             return
 
         if isinstance(result, Pending):
+            # Batch 2: a caller that already timed out must not keep the
+            # queue head occupied for another tick while polling starts.
+            if job.cancelled:
+                job.done.set()
+                return
             job.result = None
             self._pending = job
             self._pending_poll = result.poll
@@ -142,7 +179,9 @@ class GameThreadDispatcher(object):
         if time.monotonic() > job.deadline:
             self._pending = None
             self._pending_poll = None
-            job.error = DispatcherTimeout("job timed out while polling")
+            job.error = DispatcherTimeout(
+                "job timed out while polling", timeout_ms=job.timeout_ms
+            )
             job.done.set()
             return
         try:
@@ -166,7 +205,9 @@ class GameThreadDispatcher(object):
         self._shutting_down = True
         if self._pending is not None:
             try:
-                self._pending.error = DispatcherTimeout("bridge shutting down")
+                self._pending.error = DispatcherTimeout(
+                "bridge shutting down", timeout_ms=self._pending.timeout_ms
+            )
             except Exception:
                 pass
             self._pending.done.set()
@@ -177,7 +218,7 @@ class GameThreadDispatcher(object):
                 job = self._queue.get_nowait()
             except queue.Empty:
                 break
-            job.error = DispatcherTimeout("bridge shutting down")
+            job.error = DispatcherTimeout("bridge shutting down", timeout_ms=job.timeout_ms)
             job.done.set()
         handle = self._tick_handle
         self._tick_handle = None
@@ -198,9 +239,11 @@ class SynchronousDispatcher(object):
     def __init__(self):
         self._shutting_down = False
 
-    def call(self, fn, timeout_s):
+    def call(self, fn, timeout_s, meta=None):
         if self._shutting_down:
             raise DispatcherBusy("dispatcher is shutting down")
+        if meta is not None:
+            meta["queuedMs"] = 0  # no queue: executed synchronously
         return fn()
 
     def shutdown(self):

@@ -54,7 +54,8 @@ export const pythonExecTool: ToolDef = {
         errorCode: "CONFIRMATION_DENIED",
         decision: "denied",
         confirmationMode: "elicitation",
-        argsSummary: summarizeArgs(pythonExecTool.name, rawArgs),
+        // B-3.6：用 zod 解析后的生效参数做摘要（mode 默认 exec 回填审计）
+        argsSummary: summarizeArgs(pythonExecTool.name, args as unknown as Record<string, unknown>),
       });
       return errResult(
         toolError("CONFIRMATION_DENIED", "User declined the Python execution"),
@@ -80,7 +81,10 @@ export const pythonExecTool: ToolDef = {
       decision: "allowed",
       confirmationMode,
       ...(confirmationMode === "policy" ? { confirmationSwitch: "--allow-exec" } : {}),
-      argsSummary: summarizeArgs(pythonExecTool.name, rawArgs),
+      // B-3.6：mode 回填——以 zod 解析后的生效参数做摘要（python.ts 默认 exec），
+      // 修复历史记录 MODE_KEY 缺失；B-3.7：错误 details 仅提取 origin/stage，不记全文。
+      argsSummary: summarizeArgs(pythonExecTool.name, args as unknown as Record<string, unknown>),
+      errorDetails: res.error?.details,
     });
     if (!res.ok) {
       return errResult(res.error ?? toolError("INTERNAL", "bridge call failed"), meta);

@@ -1,0 +1,59 @@
+{
+  "ts": "2026-11-18T07:04:25.909Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 7677,
+    "method": "material.params",
+    "params": {
+      "action": "create_instance",
+      "materialPath": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial",
+      "instancePath": "/Engine/Transient.QA_MatInst",
+      "save": false
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 7677,
+    "result": {
+      "ok": true,
+      "data": {
+        "materialPath": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial",
+        "instancePath": "/Engine/Transient.QA_MatInst",
+        "created": true,
+        "saved": false,
+        "parameters": [
+          {
+            "name": "Color",
+            "type": "vector",
+            "value": {
+              "r": 0.8999999761581421,
+              "g": 0.8999999761581421,
+              "b": 0.8999999761581421,
+              "a": 1
+            },
+            "editable": true
+          },
+          {
+            "name": "Roughness",
+            "type": "scalar",
+            "value": 0.6406999826431274,
+            "editable": true
+          }
+        ]
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 7677,
+        "durationMs": 266,
+        "queuedMs": 233,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 276
+}

@@ -33,7 +33,7 @@ export const viewportCaptureTool: ToolDef = {
   title: "Capture Viewport Screenshot",
   description:
     "Capture the level viewport or PIE as PNG/JPEG. activateWindow=true brings the editor window to the foreground first (mitigates UE throttling when unfocused; Windows only, returns an activation block) and defaults to false. returnMode=image inlines base64 (<= 8 MiB, read from the captured file on this machine) otherwise falls back to file path with a warning. Screenshots are written to <Project>/Saved/UEMCP/captures/ and audited.",
-  timeoutMs: 45000,
+  timeoutMs: 20000, // B-3.3：45000→20000（裁决）；schema max 同步 20000，default 15000 不变
   schemaFor(_p: PolicyState) {
     return ViewportCaptureInput;
   },
@@ -44,6 +44,29 @@ export const viewportCaptureTool: ToolDef = {
       return errResult(invalidArgument(parsed.error), makeMeta(ctx, started));
     }
     const args = parsed.data;
+    // B-3.3：pixelStreaming 能力位预检——仅当 watchdog 已连接且 /health 明确返回
+    // capabilities.pixelStreaming=false 时拒绝；缺失（桥接过渡期）/断连优雅跳过，不阻塞。
+    const capState = ctx.watchdog.state;
+    if (capState.connected && capState.capabilities?.pixelStreaming === false) {
+      const meta = makeMeta(ctx, started);
+      const error = toolError(
+        "CAPABILITY_UNAVAILABLE",
+        "Bridge reports pixelStreaming capability unavailable",
+        { gate: "bridge.capabilities.pixelStreaming" },
+      );
+      await auditCall(ctx, {
+        tool: viewportCaptureTool.name,
+        rpcMethod: viewportCaptureTool.rpcMethod,
+        requestId: meta.requestId,
+        durationMs: meta.durationMs,
+        ok: false,
+        errorCode: error.code,
+        decision: "allowed",
+        argsSummary: summarizeArgs(viewportCaptureTool.name, args as Record<string, unknown>),
+        errorDetails: error.details,
+      });
+      return errResult(error, meta);
+    }
     const res = await ctx.bridge.call("viewport.capture", args as Record<string, unknown>, viewportCaptureTool.timeoutMs, { retriable: true });
     const meta = makeMeta(ctx, started);
     await auditCall(ctx, {
@@ -55,6 +78,7 @@ export const viewportCaptureTool: ToolDef = {
       errorCode: res.ok ? null : (res.error?.code ?? "INTERNAL"),
       decision: "allowed",
       argsSummary: summarizeArgs(viewportCaptureTool.name, rawArgs),
+      errorDetails: res.error?.details,
     });
     if (!res.ok) {
       return errResult(res.error ?? toolError("INTERNAL", "bridge call failed"), meta);

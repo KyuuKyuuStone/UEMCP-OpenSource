@@ -98,7 +98,7 @@ def enforce_gates(server, method, params):
 _MAX_TRACEBACK_CHARS = 8000
 
 
-def _python_error(exc):
+def _python_error(exc, method=None):
     """Map an unexpected Python exception (handler or capture poll) to the
     PYTHON_ERROR contract code, with a length-limited traceback."""
     detail = traceback.format_exc()
@@ -112,7 +112,12 @@ def _python_error(exc):
     return RpcError(
         "PYTHON_ERROR",
         message,
-        {"traceback": detail, "exceptionType": exc.__class__.__name__},
+        {
+            "traceback": detail,
+            "exceptionType": exc.__class__.__name__,
+            "origin": "bridge",
+            "stage": method or "rpc",
+        },
     )
 
 
@@ -164,7 +169,7 @@ def handle_request(server, request):
         raise RpcError(
             "METHOD_NOT_FOUND",
             "Unknown method: %s" % method,
-            {"method": method},
+            {"method": method, "origin": "caller", "stage": "dispatch"},
             rpc_code=METHOD_NOT_FOUND,
             http_status=404,
         )
@@ -186,6 +191,8 @@ def handle_request(server, request):
                     "limitPerSecond": limiter.per_second,
                     "burst": int(limiter.burst),
                     "retryAfterMs": int(round(retry_after * 1000.0)),
+                    "origin": "bridge",
+                    "stage": "rate_limit",
                 },
             )
 
@@ -193,23 +200,27 @@ def handle_request(server, request):
 
     timeout_s = _request_timeout_seconds(server, request)
     started = time.monotonic()
+    dispatch_meta = {}
 
     try:
         if method in _HTTP_THREAD_METHODS:
             outcome = handler(server, params)
         else:
             outcome = server.dispatcher.call(
-                lambda: handler(server, params), timeout_s
+                lambda: handler(server, params), timeout_s, meta=dispatch_meta
             )
     except (DispatcherBusy, DispatcherTimeout):
         # Queue/timeout conditions are bridge-level, not Python failures.
         raise
-    except RpcError:
-        # Contract errors raised deliberately by handlers pass through.
+    except RpcError as exc:
+        # Contract errors raised deliberately by handlers pass through;
+        # record the method as the processing stage when not set explicitly.
+        if isinstance(exc.details, dict):
+            exc.details.setdefault("stage", method)
         raise
     except Exception as exc:
         # Any other exception originates in Python (handler or capture poll).
-        raise _python_error(exc)
+        raise _python_error(exc, method)
 
     duration_ms = int((time.monotonic() - started) * 1000)
     if not isinstance(outcome, HandlerResult):
@@ -219,6 +230,7 @@ def handle_request(server, request):
     meta = {
         "requestId": request_id if request_id is not None else "req_" + uuid.uuid4().hex,
         "durationMs": duration_ms,
+        "queuedMs": dispatch_meta.get("queuedMs"),
         "ueVersion": server.ue_version,
         "pluginVersion": server.plugin_version,
     }

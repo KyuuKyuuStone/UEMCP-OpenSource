@@ -1,0 +1,37 @@
+{
+  "ts": "2026-11-18T07:25:05.555Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 3090,
+    "method": "python.exec",
+    "params": {}
+  },
+  "httpStatus": 400,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 3090,
+    "error": {
+      "code": -32602,
+      "message": "code: is required",
+      "data": {
+        "errorCode": "INVALID_ARGUMENT",
+        "retryable": false,
+        "details": {
+          "issues": [
+            {
+              "path": "code",
+              "code": "required",
+              "message": "is required"
+            }
+          ],
+          "origin": "caller",
+          "stage": "python.exec"
+        }
+      }
+    }
+  },
+  "durationMs": 13
+}

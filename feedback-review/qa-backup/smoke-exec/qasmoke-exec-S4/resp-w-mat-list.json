@@ -1,0 +1,48 @@
+{
+  "ts": "2026-11-18T07:04:25.554Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 6216,
+    "method": "material.params",
+    "params": {
+      "action": "list",
+      "materialPath": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 6216,
+    "result": {
+      "ok": true,
+      "data": {
+        "parameters": [
+          {
+            "name": "Color",
+            "type": "vector",
+            "value": null,
+            "editable": false
+          },
+          {
+            "name": "Roughness",
+            "type": "scalar",
+            "value": null,
+            "editable": false
+          }
+        ]
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 6216,
+        "durationMs": 250,
+        "queuedMs": 250,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 253
+}

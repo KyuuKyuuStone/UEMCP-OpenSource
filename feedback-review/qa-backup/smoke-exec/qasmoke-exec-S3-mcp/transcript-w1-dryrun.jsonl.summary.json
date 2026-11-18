@@ -1,0 +1,129 @@
+{
+  "policy": "standard",
+  "allowGates": false,
+  "startedCases": 9,
+  "results": [
+    {
+      "call": "initialize",
+      "result": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+          "tools": {
+            "listChanged": false
+          }
+        },
+        "serverInfo": {
+          "name": "uemcp",
+          "version": "0.1.5"
+        }
+      }
+    },
+    {
+      "call": "tools/list",
+      "count": 13,
+      "names": [
+        "ue_editor_status",
+        "ue_actor_query",
+        "ue_actor_edit",
+        "ue_level_control",
+        "ue_asset_search",
+        "ue_material_params",
+        "ue_viewport_capture",
+        "ue_blueprint",
+        "ue_pie_control",
+        "ue_policy_explain",
+        "ue_reflect",
+        "ue_call_function",
+        "ue_log_query"
+      ]
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_editor_status",
+      "args": {},
+      "elicitationMode": "accept",
+      "isError": false,
+      "contentText": "ue_editor_status: editor={...}, level={...}, selection={...}, capabilities={...}, policies={...}, build={...}",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 9
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_asset_search",
+      "args": {
+        "path": "/Game",
+        "limit": 5
+      },
+      "elicitationMode": "accept",
+      "isError": true,
+      "contentText": "INVALID_ARGUMENT: query: Required",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 1
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_actor_query",
+      "args": {
+        "limit": 3
+      },
+      "elicitationMode": "accept",
+      "isError": false,
+      "contentText": "ue_actor_query: 3 actors returned (total 138)",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 6
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_log_query",
+      "args": {
+        "limit": 3
+      },
+      "elicitationMode": "accept",
+      "isError": false,
+      "contentText": "matched 1407 of 1407 scanned line(s) (truncated)",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 9
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_policy_explain",
+      "args": {},
+      "elicitationMode": "accept",
+      "isError": false,
+      "contentText": "ue_policy_explain: mode=standard, allowDestructive=false, allowConsole=false, allowExec=false, tools=[15 items], bridge={...}",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 2
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_python_exec",
+      "args": {
+        "code": "1+1"
+      },
+      "elicitationMode": "decline",
+      "isError": true,
+      "contentText": "TOOL_DISABLED: Tool not available under current policy/switches",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 0
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_python_exec",
+      "args": {
+        "code": "1+1"
+      },
+      "elicitationMode": "accept",
+      "isError": true,
+      "contentText": "TOOL_DISABLED: Tool not available under current policy/switches",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 1
+    }
+  ]
+}

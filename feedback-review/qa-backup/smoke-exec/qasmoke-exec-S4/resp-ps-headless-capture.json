@@ -1,0 +1,45 @@
+{
+  "ts": "2026-11-18T07:14:01.774Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 6785,
+    "method": "viewport.capture",
+    "params": {
+      "target": "level_viewport",
+      "width": 640,
+      "height": 360,
+      "format": "png",
+      "returnMode": "file",
+      "timeoutMs": 20000
+    }
+  },
+  "httpStatus": 501,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 6785,
+    "error": {
+      "code": -32016,
+      "message": "Viewport capture is unavailable in a headless/offscreen editor",
+      "data": {
+        "errorCode": "CAPABILITY_UNAVAILABLE",
+        "retryable": false,
+        "details": {
+          "capability": "screenshot",
+          "renderer": {
+            "pixelStreaming": false,
+            "offscreen": true,
+            "commandLine": "-log -nop4 -nosplash -NullRHI -unattended -stdout -NoPause",
+            "webApiConfig": "../../../../../../Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank/Config/DefaultWebAPI.ini"
+          },
+          "suggestion": "Run the editor with a visible level viewport, or use an external screen capture tool.",
+          "stage": "viewport.capture",
+          "origin": "bridge"
+        }
+      }
+    }
+  },
+  "durationMs": 16
+}

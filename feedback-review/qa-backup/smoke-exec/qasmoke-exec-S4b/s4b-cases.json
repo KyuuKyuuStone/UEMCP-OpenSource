@@ -1,0 +1,12 @@
+[
+  { "call": "initialize" },
+  { "call": "tools/list" },
+  { "call": "tools/call", "name": "ue_editor_status", "args": {} },
+  { "call": "tools/call", "name": "ue_actor_query", "args": { "limit": 3 } },
+  { "call": "tools/call", "name": "ue_asset_search", "args": { "query": "BasicShape", "limit": 5 } },
+  { "call": "tools/call", "name": "ue_level_control", "args": { "action": "get_current" } },
+  { "call": "tools/call", "name": "ue_policy_explain", "args": {} },
+  { "call": "tools/call", "name": "ue_actor_edit", "args": { "operations": [ { "op": "spawn", "class": "StaticMeshActor", "label": "QASmokeTSB" } ], "dryRun": true } },
+  { "call": "tools/call", "name": "ue_console_command", "args": { "command": "stat fps" } },
+  { "call": "tools/call", "name": "ue_python_exec", "args": { "code": "1+1" } }
+]

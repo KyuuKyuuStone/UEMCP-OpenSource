@@ -1,0 +1,39 @@
+{
+  "ts": "2026-11-18T07:25:48.824Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 8874,
+    "method": "python.exec",
+    "params": {
+      "code": "import time\nprint(\"qa-slow-start\")\ntime.sleep(5)\nprint(\"qa-slow-end\")\n7*6\n"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 8874,
+    "result": {
+      "ok": true,
+      "data": {
+        "mode": "exec",
+        "result": null,
+        "stdout": "qa-slow-start\nqa-slow-end\n",
+        "stderr": "",
+        "durationMs": 5000,
+        "timedOut": false
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 8874,
+        "durationMs": 5000,
+        "queuedMs": 0,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 5010
+}

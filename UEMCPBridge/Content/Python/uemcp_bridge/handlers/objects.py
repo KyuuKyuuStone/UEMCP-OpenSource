@@ -485,6 +485,8 @@ def handle_call(server, params):
                     "expectedParamCount": expected,
                     "gotParamCount": len(args),
                     "error": str(exc),
+                    "origin": "caller",
+                    "stage": "object.call",
                 },
             )
 
@@ -500,6 +502,8 @@ def handle_call(server, params):
                     "target": target,
                     "error": str(exc),
                     "phase": "in-body",
+                    "origin": "caller",
+                    "stage": "object.call",
                 },
             )
         raise RpcError(
@@ -511,6 +515,8 @@ def handle_call(server, params):
                 "gotParamCount": len(args),
                 "error": str(exc),
                 "unverifiedSignature": True,
+                "origin": "caller",
+                "stage": "object.call",
             },
         )
     except RpcError:
@@ -519,7 +525,13 @@ def handle_call(server, params):
         raise RpcError(
             "EXECUTION_ERROR",
             "Calling %s failed: %s" % (name, exc),
-            {"function": name, "target": target, "error": str(exc)},
+            {
+                "function": name,
+                "target": target,
+                "error": str(exc),
+                "origin": "caller",
+                "stage": "object.call",
+            },
         )
 
     data = {

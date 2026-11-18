@@ -1,0 +1,42 @@
+{
+  "ts": "2026-11-18T07:04:24.553Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1878,
+    "method": "python.exec",
+    "params": {
+      "code": "import unreal\nprint('qa-s4-ok')\n21*2",
+      "resultExpression": true,
+      "timeoutMs": 15000,
+      "captureOutput": true
+    }
+  },
+  "httpStatus": 400,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1878,
+    "error": {
+      "code": -32602,
+      "message": "resultExpression: must be a string",
+      "data": {
+        "errorCode": "INVALID_ARGUMENT",
+        "retryable": false,
+        "details": {
+          "issues": [
+            {
+              "path": "resultExpression",
+              "code": "invalid_type",
+              "message": "must be a string"
+            }
+          ],
+          "origin": "caller",
+          "stage": "python.exec"
+        }
+      }
+    }
+  },
+  "durationMs": 241
+}

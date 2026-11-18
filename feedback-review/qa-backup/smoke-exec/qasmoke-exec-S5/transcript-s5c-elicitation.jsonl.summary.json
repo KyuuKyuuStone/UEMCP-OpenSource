@@ -1,0 +1,63 @@
+{
+  "policy": "full",
+  "allowGates": false,
+  "startedCases": 3,
+  "results": [
+    {
+      "call": "initialize",
+      "result": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+          "tools": {
+            "listChanged": false
+          }
+        },
+        "serverInfo": {
+          "name": "uemcp",
+          "version": "0.1.5"
+        }
+      }
+    },
+    {
+      "call": "tools/list",
+      "count": 13,
+      "names": [
+        "ue_editor_status",
+        "ue_actor_query",
+        "ue_actor_edit",
+        "ue_level_control",
+        "ue_asset_search",
+        "ue_material_params",
+        "ue_viewport_capture",
+        "ue_blueprint",
+        "ue_pie_control",
+        "ue_policy_explain",
+        "ue_reflect",
+        "ue_call_function",
+        "ue_log_query"
+      ]
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_actor_edit",
+      "args": {
+        "operations": [
+          {
+            "confirm": true,
+            "selector": {
+              "kind": "actorPath",
+              "value": "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_UAID_00FFAABBCCDD161603_1794776940"
+            },
+            "op": "delete"
+          }
+        ]
+      },
+      "elicitationMode": "accept",
+      "isError": false,
+      "contentText": "ue_actor_edit: dryRun=false, results=[1 items], summary={...}",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 195
+    }
+  ]
+}

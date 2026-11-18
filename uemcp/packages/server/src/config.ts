@@ -1,6 +1,8 @@
 /**
  * 配置（§2.3）：优先级 命令行参数 > 环境变量 > 发现文件 > 默认值。
  */
+import type { PolicySource } from "@uemcp/shared";
+
 export interface ServerOptions {
   transport: "http" | "stdio";
   host: string;
@@ -19,6 +21,8 @@ export interface ServerOptions {
   /** 会话池上限（--max-sessions / UEMCP_MAX_SESSIONS，默认 32；仅供测试与运维调小） */
   maxSessions: number;
   auditDir?: string;
+  /** B-3.9：策略来源（cli|env|default），loadConfig 计算，供审计 policySnapshot.ts.source */
+  policySource?: PolicySource;
 }
 
 export const DEFAULT_HTTP_PORT = 18777;
@@ -77,6 +81,19 @@ export function loadConfig(argv: string[]): ServerOptions {
   const args = parseArgs(argv);
   const env = process.env;
   const transport = args["--transport"] === "stdio" ? "stdio" : "http";
+  // B-3.9：策略来源跟踪（CLI > env > default；env 仅接受 standard/full，语义与原实现一致），
+  // 供审计 policySnapshot.ts.source；不新增 CLI 参数（未知参数报错面不变）。
+  const cliPolicy =
+    args["--policy"] === "standard" || args["--policy"] === "full" || args["--policy"] === "read-only"
+      ? (args["--policy"] as ServerOptions["policy"])
+      : undefined;
+  const envPolicy =
+    env.UEMCP_POLICY === "standard" || env.UEMCP_POLICY === "full"
+      ? (env.UEMCP_POLICY as ServerOptions["policy"])
+      : undefined;
+  const policy = cliPolicy ?? envPolicy ?? "read-only";
+  const policySource: PolicySource =
+    cliPolicy !== undefined ? "cli" : envPolicy !== undefined ? "env" : "default";
   return {
     transport,
     host: "127.0.0.1",
@@ -84,13 +101,8 @@ export function loadConfig(argv: string[]): ServerOptions {
       typeof args["--port"] === "string" ? args["--port"] : undefined,
       intOr(env.UEMCP_HTTP_PORT, DEFAULT_HTTP_PORT),
     ),
-    policy:
-      args["--policy"] === "standard" || args["--policy"] === "full" || args["--policy"] === "read-only"
-        ? (args["--policy"] as ServerOptions["policy"])
-        : (env.UEMCP_POLICY as ServerOptions["policy"]) === "standard" ||
-            (env.UEMCP_POLICY as ServerOptions["policy"]) === "full"
-          ? (env.UEMCP_POLICY as ServerOptions["policy"])
-          : "read-only",
+    policy,
+    policySource,
     allowDestructive: args["--allow-destructive"] === true || env.UEMCP_ALLOW_DESTRUCTIVE === "1",
     allowConsole: args["--allow-console"] === true || env.UEMCP_ALLOW_CONSOLE === "1",
     allowExec: args["--allow-exec"] === true || env.UEMCP_ALLOW_EXEC === "1",

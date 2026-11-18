@@ -96,6 +96,8 @@ const StatusData = looseObject({
     animBlueprintEdit: z.boolean().optional(),
     assetRegistry: z.boolean().optional(),
     console: z.boolean().optional(),
+    // B-3.3：桥接并行新增能力位（过渡期缺失容忍）
+    pixelStreaming: z.boolean().optional(),
   }).optional(),
   // Server 侧在成功路径必然注入（tools/status.ts data.policies）
   policies: z
@@ -106,6 +108,14 @@ const StatusData = looseObject({
       destructive: z.boolean(),
     })
     .strict(),
+  // B-3.1/B2：Server 侧从 watchdog 保留的 /health 实际值注入构建身份——
+  // 仅连接且字段存在时出现；断连/缺失不注入（不伪造、不以旧缓存冒充现值）
+  build: looseObject({
+    instanceId: z.string().optional(),
+    buildHash: z.string().optional(),
+    buildTime: z.string().optional(),
+    sourcePath: z.string().optional(),
+  }).optional(),
 });
 
 export const StatusOutput = outputUnion(StatusData);

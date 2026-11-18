@@ -103,6 +103,8 @@ export const actorEditTool: ToolDef = {
       decision: "allowed",
       ...(needsConfirm ? { confirmationMode, confirmationSwitch } : {}),
       argsSummary: summarizeArgs(actorEditTool.name, rawArgs),
+      // B-3.7：details 仅由 auditCall 提取 origin/stage 等摘要字段，不记录全文
+      errorDetails: res.error?.details,
     });
     if (!res.ok) {
       return errResult(res.error ?? toolError("INTERNAL", "bridge call failed"), meta);

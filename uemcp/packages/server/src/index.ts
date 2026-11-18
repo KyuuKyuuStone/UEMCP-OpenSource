@@ -43,6 +43,7 @@ async function main(): Promise<void> {
     transport: opts.transport,
     port: opts.transport === "http" ? opts.port : undefined,
     policy: opts.policy,
+    policySource: opts.policySource,
     allowDestructive: opts.allowDestructive,
     allowConsole: opts.allowConsole,
     allowExec: opts.allowExec,
@@ -53,6 +54,8 @@ async function main(): Promise<void> {
     allowDestructive: opts.allowDestructive,
     allowConsole: opts.allowConsole,
     allowExec: opts.allowExec,
+    // B-3.9：策略来源（cli|env|default）进入审计 policySnapshot.ts.source
+    source: opts.policySource,
   };
 
   const audit = new Audit(log, opts.auditDir);

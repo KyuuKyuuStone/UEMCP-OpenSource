@@ -1,0 +1,1 @@
+{"operations":[{"op":"set_properties","selector":{"kind":"actorPath","value":"/"},"properties":{"mobility":"movable","tags":{"qa":"s4"}}}]}

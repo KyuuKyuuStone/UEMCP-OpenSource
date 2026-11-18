@@ -3,6 +3,9 @@ import type { ToolErrorCode } from "./errors.js";
 /** 架构文档 §10.1 关键类型 */
 export type PolicyMode = "read-only" | "standard" | "full";
 
+/** 策略来源（B-3.9 policySnapshot.ts.source）：CLI 参数 > 环境变量 > 默认 read-only */
+export type PolicySource = "cli" | "env" | "default";
+
 export interface ToolMeta {
   requestId: string;
   durationMs: number;
@@ -62,8 +65,14 @@ export interface BridgeDiscoveryFile {
     animBlueprintEdit: boolean;
     assetRegistry: boolean;
     console: boolean;
+    /** 桥接并行新增能力位（B-3.3）；旧桥接缺失时容忍，TS 预检优雅跳过 */
+    pixelStreaming?: boolean;
   };
   startedAt: string;
+  /** B-3.9：桥接自标记陈旧（如编辑器已退出）；TS 发现时尊重，拒绝采用 */
+  stale?: boolean;
+  staleReason?: string;
+  staleAt?: string;
 }
 
 /** 审计记录（§6.5） */
@@ -85,4 +94,29 @@ export interface AuditRecord {
   errorCode: string | null;
   ueVersion?: string;
   pluginVersion?: string;
+  /** B-3.1 构建身份四字段：仅当看门狗已连接且 /health 实际返回时记录，断连/缺失不伪造 */
+  instanceId?: string;
+  buildHash?: string;
+  buildTime?: string;
+  sourcePath?: string;
+  /** B-3.9：看门狗保留的 /health schemaVersion（缺失时回退发现文件值；断连不记录） */
+  schemaVersion?: number;
+  /** B-3.7：PYTHON_ERROR details 的 origin/stage 关键字段（容忍缺失；不记录 details 全文） */
+  origin?: string;
+  stage?: string;
+  /** B-3.9 策略快照：ts 侧生效策略＋来源；bridge 侧按 /health 收到的键原样记录、不伪造 */
+  policySnapshot?: {
+    ts: {
+      mode: PolicyMode;
+      source?: PolicySource;
+      allowWrite: boolean;
+      allowConsole: boolean;
+      allowExec: boolean;
+      allowDestructive: boolean;
+    };
+    bridge?: {
+      policies?: Record<string, unknown>;
+      rateLimit?: Record<string, unknown>;
+    };
+  };
 }

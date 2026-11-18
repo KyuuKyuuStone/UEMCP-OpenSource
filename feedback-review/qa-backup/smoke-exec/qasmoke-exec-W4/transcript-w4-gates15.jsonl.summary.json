@@ -1,0 +1,43 @@
+{
+  "policy": "full",
+  "allowGates": true,
+  "startedCases": 2,
+  "results": [
+    {
+      "call": "initialize",
+      "result": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+          "tools": {
+            "listChanged": false
+          }
+        },
+        "serverInfo": {
+          "name": "uemcp",
+          "version": "0.1.5"
+        }
+      }
+    },
+    {
+      "call": "tools/list",
+      "count": 15,
+      "names": [
+        "ue_editor_status",
+        "ue_actor_query",
+        "ue_actor_edit",
+        "ue_level_control",
+        "ue_asset_search",
+        "ue_material_params",
+        "ue_viewport_capture",
+        "ue_console_command",
+        "ue_python_exec",
+        "ue_blueprint",
+        "ue_pie_control",
+        "ue_policy_explain",
+        "ue_reflect",
+        "ue_call_function",
+        "ue_log_query"
+      ]
+    }
+  ]
+}

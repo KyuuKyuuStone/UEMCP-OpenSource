@@ -1,0 +1,242 @@
+{
+  "ts": "2026-11-18T07:04:24.886Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9658,
+    "method": "object.reflect",
+    "params": {
+      "target": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 9658,
+    "result": {
+      "ok": true,
+      "data": {
+        "target": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial",
+        "targetClass": "Material",
+        "functions": [
+          {
+            "name": "acquire_editor_element_handle",
+            "pythonName": "acquire_editor_element_handle",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "add_asset_user_data_of_class",
+            "pythonName": "add_asset_user_data_of_class",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "call_method",
+            "pythonName": "call_method",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "cast",
+            "pythonName": "cast",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_asset_user_data_of_class",
+            "pythonName": "get_asset_user_data_of_class",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_base_material",
+            "pythonName": "get_base_material",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_blend_mode",
+            "pythonName": "get_blend_mode",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_class",
+            "pythonName": "get_class",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_default_object",
+            "pythonName": "get_default_object",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_editor_property",
+            "pythonName": "get_editor_property",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_fname",
+            "pythonName": "get_fname",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_full_name",
+            "pythonName": "get_full_name",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_name",
+            "pythonName": "get_name",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_nanite_overide_material",
+            "pythonName": "get_nanite_overide_material",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_outer",
+            "pythonName": "get_outer",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_outermost",
+            "pythonName": "get_outermost",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_package",
+            "pythonName": "get_package",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_parameter_info",
+            "pythonName": "get_parameter_info",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_path_name",
+            "pythonName": "get_path_name",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_physical_material",
+            "pythonName": "get_physical_material",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_physical_material_from_map",
+            "pythonName": "get_physical_material_from_map",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_physical_material_mask",
+            "pythonName": "get_physical_material_mask",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_typed_outer",
+            "pythonName": "get_typed_outer",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "get_world",
+            "pythonName": "get_world",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "has_asset_user_data_of_class",
+            "pythonName": "has_asset_user_data_of_class",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "is_editor_property_overridden",
+            "pythonName": "is_editor_property_overridden",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "is_package_external",
+            "pythonName": "is_package_external",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "modify",
+            "pythonName": "modify",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "rename",
+            "pythonName": "rename",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "reset_editor_property",
+            "pythonName": "reset_editor_property",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "set_editor_properties",
+            "pythonName": "set_editor_properties",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "set_editor_property",
+            "pythonName": "set_editor_property",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "set_force_mip_levels_to_be_resident",
+            "pythonName": "set_force_mip_levels_to_be_resident",
+            "paramCount": null,
+            "inherited": true
+          },
+          {
+            "name": "static_class",
+            "pythonName": "static_class",
+            "paramCount": null,
+            "inherited": true
+          }
+        ],
+        "truncated": false
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 9658,
+        "durationMs": 233,
+        "queuedMs": 233,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 253
+}

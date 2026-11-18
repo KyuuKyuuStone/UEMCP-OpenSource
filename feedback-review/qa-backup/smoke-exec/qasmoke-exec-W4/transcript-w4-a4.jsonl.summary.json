@@ -1,0 +1,87 @@
+{
+  "policy": "full",
+  "allowGates": false,
+  "startedCases": 4,
+  "results": [
+    {
+      "call": "initialize",
+      "result": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+          "tools": {
+            "listChanged": false
+          }
+        },
+        "serverInfo": {
+          "name": "uemcp",
+          "version": "0.1.5"
+        }
+      }
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_actor_edit",
+      "args": {
+        "operations": [
+          {
+            "op": "spawn",
+            "class": "StaticMeshActor",
+            "label": "QASmokeW4",
+            "location": {
+              "x": 300,
+              "y": 0,
+              "z": 0
+            }
+          }
+        ]
+      },
+      "elicitationMode": "accept",
+      "isError": false,
+      "contentText": "ue_actor_edit: dryRun=false, results=[1 items], summary={...}",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 58
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_actor_edit",
+      "args": {
+        "operations": [
+          {
+            "op": "delete",
+            "selector": {
+              "kind": "label",
+              "value": "QASmokeW4"
+            },
+            "confirm": false
+          }
+        ]
+      },
+      "elicitationMode": "accept",
+      "isError": true,
+      "contentText": "CONFIRMATION_REQUIRED: Destructive operation requires confirmation: client elicitation not available and --allow-destructive is off",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 2
+    },
+    {
+      "call": "tools/call",
+      "name": "ue_actor_query",
+      "args": {
+        "filter": {
+          "labelContains": "QASmokeW4"
+        },
+        "fields": [
+          "identity"
+        ],
+        "limit": 20
+      },
+      "elicitationMode": "accept",
+      "isError": false,
+      "contentText": "ue_actor_query: 1 actors returned (total 1)",
+      "error": null,
+      "serverElicitations": [],
+      "durationMs": 10
+    }
+  ]
+}

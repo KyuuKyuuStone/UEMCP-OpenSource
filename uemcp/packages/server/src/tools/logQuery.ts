@@ -6,7 +6,8 @@
  * 不允许任意路径读取（这是本插件不开放文件读取的边界的一部分）。
  */
 import { logQueryInputSchema } from "@uemcp/shared";
-import { makeMeta, okResult, errResult, invalidArgument, toolError, type ToolContext, type ToolDef } from "./common.js";
+import { summarizeArgs } from "../audit.js";
+import { auditCall, makeMeta, okResult, errResult, invalidArgument, toolError, type ToolContext, type ToolDef } from "./common.js";
 
 export const logQueryTool: ToolDef = {
   name: "ue_log_query",
@@ -26,6 +27,18 @@ export const logQueryTool: ToolDef = {
     }
     const res = await ctx.bridge.call("log.query", parsed.data as Record<string, unknown>, logQueryTool.timeoutMs);
     const meta = makeMeta(ctx, started);
+    // B-3.7：读工具统一纳入审计（仅摘要；invalidArgument 早退不审计）
+    await auditCall(ctx, {
+      tool: logQueryTool.name,
+      rpcMethod: logQueryTool.rpcMethod,
+      requestId: meta.requestId,
+      durationMs: meta.durationMs,
+      ok: res.ok,
+      errorCode: res.ok ? null : (res.error?.code ?? "INTERNAL"),
+      decision: "allowed",
+      argsSummary: summarizeArgs(logQueryTool.name, parsed.data as Record<string, unknown>),
+      errorDetails: res.error?.details,
+    });
     if (!res.ok) return errResult(res.error ?? toolError("INTERNAL", "bridge call failed"), meta);
     const data = res.data as { matched?: number; scannedLines?: number; truncated?: boolean };
     return okResult(

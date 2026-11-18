@@ -79,6 +79,42 @@ INTERNAL_ERROR = -32603
 MAX_DETAILS_BYTES = 16 * 1024
 MAX_MESSAGE_CHARS = 1024
 
+# Batch-2 error-origin contract: ``details.origin`` says which side caused the
+# failure ("caller" = bad request / user code, "bridge" = bridge-side
+# condition); ``details.stage`` names the processing stage.  Explicit values
+# set by a raise site always win over these defaults.
+CALLER_ORIGIN_CODES = frozenset({
+    "PARSE_ERROR",
+    "INVALID_REQUEST",
+    "INVALID_PARAMS",
+    "METHOD_NOT_FOUND",
+    "PAYLOAD_TOO_LARGE",
+    "INVALID_ARGUMENT",
+})
+ENVELOPE_STAGE_CODES = frozenset({
+    "PARSE_ERROR",
+    "INVALID_REQUEST",
+    "INVALID_PARAMS",
+    "PAYLOAD_TOO_LARGE",
+})
+
+
+def annotate_origin_stage(error_code, details):
+    """Return a copy of ``details`` with origin/stage defaults filled in."""
+    if isinstance(details, dict):
+        out = dict(details)
+    elif details:
+        out = {"value": details}
+    else:
+        out = {}
+    out.setdefault(
+        "origin", "caller" if error_code in CALLER_ORIGIN_CODES else "bridge"
+    )
+    out.setdefault(
+        "stage", "envelope" if error_code in ENVELOPE_STAGE_CODES else "rpc"
+    )
+    return out
+
 
 class RpcError(Exception):
     """A bridge-side failure with a contract error code."""
@@ -169,7 +205,7 @@ def invalid_argument(issues, message=None):
         first.get("path", "<arguments>"),
         first.get("message", "invalid arguments"),
     )
-    return RpcError("INVALID_ARGUMENT", text, {"issues": issues})
+    return RpcError("INVALID_ARGUMENT", text, {"issues": issues, "origin": "caller"})
 
 
 def rpc_error_response(request_id, code, message, rpc_code, details=None):
@@ -180,7 +216,11 @@ def rpc_error_response(request_id, code, message, rpc_code, details=None):
         "error": {
             "code": rpc_code,
             "message": message,
-            "data": {"errorCode": code, "retryable": False, "details": details or {}},
+            "data": {
+                "errorCode": code,
+                "retryable": False,
+                "details": annotate_origin_stage(code, details),
+            },
         },
     }
     return payload

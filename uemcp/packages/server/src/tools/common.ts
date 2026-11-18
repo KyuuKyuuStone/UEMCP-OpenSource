@@ -103,7 +103,9 @@ function firstIssueMessage(zerr: z.ZodError): string {
   return `${path}${i.message}`;
 }
 
-/** P1/P2 审计（§6.5） */
+/** 审计（§6.5；B-3.7 起读工具统一覆盖）。
+ *  B-3.1 构建身份 / B-3.7 origin/stage / B-3.9 策略快照与 schemaVersion：
+ *  只记录实际存在的值，桥接过渡期缺失容忍；绝不记录错误 details 全文（隐私红线）。 */
 export async function auditCall(
   ctx: ToolContext,
   args: {
@@ -117,9 +119,42 @@ export async function auditCall(
     confirmationMode?: "elicitation" | "policy" | "none";
     confirmationSwitch?: string;
     argsSummary: Record<string, unknown>;
+    /** B-3.7：桥接错误 details——仅提取 origin/stage 字符串键，不记全文 */
+    errorDetails?: Record<string, unknown>;
   },
 ): Promise<void> {
   const w = ctx.watchdog.state;
+  const d = args.errorDetails;
+  // B-3.7：origin/stage 仅在 details 实际提供字符串值时记录（过渡期容忍缺失）；
+  // stage 缺失时回退 details.phase（BRIDGE_TIMEOUT phase="game_thread" 为 TS 自身 m-2 超时归因事实）。
+  const origin = typeof d?.origin === "string" ? d.origin : undefined;
+  const stage =
+    typeof d?.stage === "string" ? d.stage : typeof d?.phase === "string" ? d.phase : undefined;
+  // B-3.9：策略快照——ts 侧恒在（source 未知时省略该键，不伪造）；
+  // bridge 侧仅在已连接且 /health 实际返回 policies/rateLimit 时记录，按收到的键原样保留。
+  const policySnapshot = {
+    ts: {
+      mode: ctx.policy.mode,
+      ...(ctx.policy.source ? { source: ctx.policy.source } : {}),
+      allowWrite: ctx.policy.mode !== "read-only",
+      allowConsole: ctx.policy.allowConsole,
+      allowExec: ctx.policy.allowExec,
+      allowDestructive: ctx.policy.allowDestructive,
+    },
+    ...(w.connected && (w.policies !== undefined || w.rateLimit !== undefined)
+      ? {
+          bridge: {
+            ...(w.policies !== undefined ? { policies: w.policies } : {}),
+            ...(w.rateLimit !== undefined ? { rateLimit: w.rateLimit } : {}),
+          },
+        }
+      : {}),
+  };
+  // B-3.9：schemaVersion 优先 watchdog 保留的 /health 值，回退发现文件值；
+  // 断连时两者都不记录（B-3.4 不以旧缓存冒充现值）。
+  const schemaVersion = w.connected
+    ? (w.schemaVersion ?? ctx.bridge.getCached()?.discovery?.schemaVersion)
+    : undefined;
   await ctx.audit.record({
     ts: new Date().toISOString(),
     requestId: args.requestId,
@@ -138,6 +173,15 @@ export async function auditCall(
     errorCode: args.errorCode,
     ...(w.ueVersion ? { ueVersion: w.ueVersion } : {}),
     ...(w.pluginVersion ? { pluginVersion: w.pluginVersion } : {}),
+    // B-3.1：构建身份四字段——仅已连接且实际存在时注入（不伪造、不以旧缓存冒充）
+    ...(w.connected && w.instanceId !== undefined ? { instanceId: w.instanceId } : {}),
+    ...(w.connected && w.buildHash !== undefined ? { buildHash: w.buildHash } : {}),
+    ...(w.connected && w.buildTime !== undefined ? { buildTime: w.buildTime } : {}),
+    ...(w.connected && w.sourcePath !== undefined ? { sourcePath: w.sourcePath } : {}),
+    ...(schemaVersion !== undefined ? { schemaVersion } : {}),
+    ...(origin !== undefined ? { origin } : {}),
+    ...(stage !== undefined ? { stage } : {}),
+    policySnapshot,
   });
 }
 

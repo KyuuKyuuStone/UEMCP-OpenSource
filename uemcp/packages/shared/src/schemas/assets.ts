@@ -27,6 +27,9 @@ export const AssetSearchInput = z
     limit: z.number().int().min(1).max(500).default(100),
     offset: z.number().int().min(0).default(0),
     sortBy: z.enum(["path", "class", "name"]).default("path"),
+    // B-3.10：可选透传 maxNodes（桥接并行实现请求级上限，接口以桥接为权威；
+    // TS 仅校验 1–1000 并透传，缺省不启用）
+    maxNodes: z.number().int().min(1).max(1000).optional(),
   })
   .strict();
 

@@ -1,0 +1,39 @@
+{
+  "ts": "2026-11-18T07:04:25.220Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 5152,
+    "method": "object.call",
+    "params": {
+      "target": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial",
+      "function": "GetName",
+      "args": []
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 5152,
+    "result": {
+      "ok": true,
+      "data": {
+        "target": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial",
+        "function": "get_name",
+        "returned": "BasicShapeMaterial",
+        "returnedVoid": false
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 5152,
+        "durationMs": 250,
+        "queuedMs": 250,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 258
+}

@@ -1,4 +1,4 @@
-# UEMCP Bridge（UE 5 编辑器侧，v0.1.0）
+# UEMCP Bridge（UE 5 编辑器侧，v0.1.6）
 
 面向 Unreal Engine 5 编辑器的本地 HTTP JSON-RPC 桥接插件，是 UEMCP 双进程架构中的编辑器执行层。纯 Python，无 C++ 模块，不需要编译。
 
@@ -26,12 +26,12 @@ UEMCPBridge/
 │     ├─ errors.py                  # 契约错误码 → JSON-RPC 码/HTTP 状态
 │     ├─ settings.py                # 环境变量 > Saved/UEMCP/bridge-settings.json > 默认
 │     ├─ serialization.py           # UE 类型 → JSON
-│     └─ handlers/                  # 10 个工具对应的 12 个 RPC method
+│     └─ handlers/                  # 14 个工具对应的 16 个 RPC method
 ├─ Tools/stamp_uplugin.py           # 打包时注入 EngineVersion（标准库；仅源码仓库，发行包内不含）
-└─ Tests/                           # 11 个无编辑器自检 + 引擎冒烟/探针
+└─ Tests/                           # 20 个无编辑器自检 + 引擎冒烟/探针
 ```
 
-> **发行包（zip）与源码仓库的差异**：发行包内含 `UEMCPBridge.uplugin`（打包时已注入 `EngineVersion` 与版本化 `Description`）、`Content/`、`README.md`、`LICENSE`（MIT 全文）、`COMPAT-UE57.md`（5.7 兼容核查表）与 `Tests/`（`*.py` 自检脚本及 `Tests/SMOKE-REAL-ENGINE.md` 真机验证说明；不含 `*.ps1` 执行器与 `smoke-runs/` 运行产物）。`Tools/` 与 `Tests/*.ps1` **仅在源码仓库中提供**（not included in the archive）：`Tools/stamp_uplugin.py` 由维护者在打包时执行，`ue_smoke_run.ps1` / `ue_probe_run.ps1` / `ue_common.ps1` 是维护者的一键真机执行器，二者均不随包分发；下文凡引用上述文件之处，均指源码仓库中的副本。发行包内的 `Tests/*.py` 自检可在解包后直接运行（第 10 项 `test_uplugin_metadata.py` 依赖 `Tools/`，请在源码检出中运行）。
+> **发行包（zip）与源码仓库的差异**：发行包内含 `UEMCPBridge.uplugin`（打包时已注入 `EngineVersion` 与版本化 `Description`）、`Content/`、`README.md`、`LICENSE`（MIT 全文）、`COMPAT-UE57.md`（5.7 兼容核查表）与 `Tests/`（`*.py` 自检脚本及 `Tests/SMOKE-REAL-ENGINE.md` 真机验证说明；不含 `*.ps1` 执行器与 `smoke-runs/` 运行产物）。`Tools/` 与 `Tests/*.ps1` **仅在源码仓库中提供**（not included in the archive）：`Tools/stamp_uplugin.py` 由维护者在打包时执行，`ue_smoke_run.ps1` / `ue_probe_run.ps1` / `ue_common.ps1` 是维护者的一键真机执行器，二者均不随包分发；下文凡引用上述文件之处，均指源码仓库中的副本。发行包内的 `Tests/*.py` 自检可在解包后直接运行（第 19 项 `test_uplugin_metadata.py` 依赖 `Tools/`，请在源码检出中运行）。
 
 ## 2. 启用与启动
 
@@ -132,6 +132,9 @@ curl -s http://127.0.0.1:18778/health
 | `python.exec` | `ue_python_exec` | `allowExec` |
 | `blueprint.query` | `ue_blueprint` | 写动作（compile）需 `allowWrite` |
 | `pie.control` | `ue_pie_control` | `status` 只读；`start`/`stop`/`restart` 需 `allowWrite` |
+| `object.reflect` | `ue_reflect` | read-only |
+| `object.call` | `ue_call_function` | `allowWrite` |
+| `log.query` | `ue_log_query` | read-only |
 
 成功响应 `result`：`{"ok":true,"data":{},"warnings":[],"meta":{requestId,durationMs,ueVersion,pluginVersion}}`；失败为 JSON-RPC `error`，`data.errorCode` 使用架构文档 §2.9.3 的字符串码。
 
@@ -166,8 +169,8 @@ curl -s http://127.0.0.1:18778/health
 怎么确认你的环境兼容：
 
 1. 启动编辑器后看 `GET /health`：`ueVersion` 应为 `5.4.x` 或 `5.7.x`，`capabilities` 含 `screenshot` / `blueprintCompile` / `pieControl`，并出现 `rateLimit`；
-2. 同一响应里核对可追溯字段：`pluginVersion`（应等于 `.uplugin` 的 `VersionName`，本版为 `0.1.5`）、`buildHash`（插件 Python 全量 sha256）、`buildTime`、`sourcePath`（**实际加载的插件目录**，用于排除「备份目录顶替」）、`instanceId`；
-3. 跑 §10.2 的 14 个无编辑器自检，全部 exit 0；
+2. 同一响应里核对可追溯字段：`pluginVersion`（应等于 `.uplugin` 的 `VersionName`，本版为 `0.1.6`）、`buildHash`（插件 Python 全量 sha256）、`buildTime`、`sourcePath`（**实际加载的插件目录**，用于排除「备份目录顶替」）、`instanceId`；
+3. 跑 §10.2 的 20 个无编辑器自检，全部 exit 0；
 4. 需要引擎的用例按 §10.1 跑 `smoke_bridge.py`（看到 `SMOKE_RESULT PASS`）与 `probe_ue57.py`（看到 `RESULT PASS`，报告写入 `<YourProject>/Saved/UEMCP/probe_ue57.json`）。
 
 ## 9. 已知限制
@@ -206,7 +209,7 @@ curl -s http://127.0.0.1:18778/health
 - `smoke_bridge.py`：启动 HTTP 层（同步 dispatcher，commandlet 无 Slate tick），自检 `/health`、`bridge.ping`、错误 token（401）、执行门（`EXEC_DISABLED`）、写门（`PERMISSION_DENIED`）、参数校验路径（`INVALID_ARGUMENT` → HTTP 400 / -32602 / `details.issues`），随后保持监听 `SMOKE_HOLD_SECONDS`（默认 12 秒）供外部 curl。判定：`SMOKE_RESULT PASS`。
 - `probe_ue57.py`：默认只读，输出各 `unreal.*` API 的可用性与取值到 `Saved/UEMCP/probe_ue57.json`；`--live-actors`、`--capture`、`--console` 会创建编辑器状态，仅在一次性测试工程使用；可加 `--blueprint /Game/<BP>`、`--material /Game/<MI>`。判定：`RESULT PASS`。
 
-### 10.2 无需编辑器的 11 个自检
+### 10.2 无需编辑器的 20 个自检
 
 用引擎自带 Python（UE 5.4.4 / 5.7.4 均为 3.11.8）逐个执行，也可用任意 Python 3.11+：
 
@@ -217,23 +220,32 @@ Get-ChildItem "<RepoRoot>\UEMCPBridge\Tests" -Filter *.py |
   ForEach-Object { & $py $_.FullName; "exit=$LASTEXITCODE  $($_.Name)" }
 ```
 
-预期 11 个脚本全部 `exit=0`：
+预期 20 个脚本全部 `exit=0`：
 
 | # | 脚本 | 覆盖 |
 | --- | --- | --- |
 | 1 | `check_error_codes.py` | 错误码表覆盖 + `INVALID_ARGUMENT` 契约 |
 | 2 | `check_handler_names.py` | 未定义名称静态扫描（缺失导入回归） |
-| 3 | `test_serialization.py` | FQuat / FTransform 序列化 |
-| 4 | `test_class_path_resolution.py` | 类名 / 类路径 / 蓝图生成类解析（stub） |
-| 5 | `test_dependency_options.py` | 依赖选项映射与查询降级 |
-| 6 | `test_python_error_mapping.py` | Python 异常 → `PYTHON_ERROR` |
-| 7 | `test_discovery_lifecycle.py` | 发现文件清理与 stale 标记 |
-| 8 | `test_port_fallback.py` | 占用 18778，断言回退到 18779 |
-| 9 | `test_rate_limit.py` | 令牌桶、配置优先级、HTTP 429 `RATE_LIMITED`、入队前拦截 |
-| 10 | `test_uplugin_metadata.py` | `.uplugin` 不写死版本 + `stamp_uplugin.py` |
-| 11 | `test_bridge_timeout_http.py` | 真实 dispatcher 超时 → HTTP 504 `BRIDGE_TIMEOUT` |
+| 3 | `check_plugin_version.py` | `settings.PLUGIN_VERSION` 与 `.uplugin` / `__init__` 一致 |
+| 4 | `check_readme_tables.py` | 本文档与代码同步（版本号、§5 方法表、§10.2 脚本表、陈旧数字） |
+| 5 | `test_bridge_fixes.py` | 第二批修复回归（`/health` 18 键 schema、错误来源、请求级日志、BFS 上限、`nextOffset`、`settings.source`） |
+| 6 | `test_bridge_timeout_http.py` | 真实 dispatcher 超时 → HTTP 504 `BRIDGE_TIMEOUT` |
+| 7 | `test_class_path_resolution.py` | 类名 / 类路径 / 蓝图生成类解析（stub） |
+| 8 | `test_dependency_options.py` | 依赖选项映射与查询降级 |
+| 9 | `test_discovery_lifecycle.py` | 发现文件清理与 stale 标记 |
+| 10 | `test_dispatcher_meta.py` | 入队等待时间 `queuedMs`（异步 / 同步 dispatcher） |
+| 11 | `test_error_origin.py` | 错误来源 `origin`/`stage` 与 HTTP 层拒绝路径 |
+| 12 | `test_log_query.py` | 日志查询过滤与游标 |
+| 13 | `test_object_call.py` | `object.call` 参数校验与黑名单 |
+| 14 | `test_pie_control.py` | PIE 状态机与写门 |
+| 15 | `test_port_fallback.py` | 占用 18778，断言回退到 18779 |
+| 16 | `test_python_error_mapping.py` | Python 异常 → `PYTHON_ERROR` |
+| 17 | `test_rate_limit.py` | 令牌桶、配置优先级、HTTP 429 `RATE_LIMITED`、入队前拦截 |
+| 18 | `test_serialization.py` | FQuat / FTransform 序列化 |
+| 19 | `test_uplugin_metadata.py` | `.uplugin` 不写死版本 + `stamp_uplugin.py` |
+| 20 | `test_viewport_capture.py` | 截图能力探测与 `FORMAT_MISMATCH` 降级 |
 
-本次交付已在 UE 5.4.4 自带 Python 3.11.8 上实跑，11/11 exit 0；需要引擎的 4 个脚本（`smoke_bridge.py`、`probe_ue57.py`、`probe_transform.py`、`probe_defect4_verify.py`）待与 QA 用 5.7 工程联跑。
+20 个无编辑器自检在本批复核中全部 exit 0（CPython 3.14）；0.1.5 首发时的 16 个曾在 UE 5.4.4 自带 Python 3.11.8 上实跑。需要引擎的 4 个脚本（`smoke_bridge.py`、`probe_ue57.py`、`probe_transform.py`、`probe_defect4_verify.py`）待与 QA 用 5.7 工程联跑。
 
 一键真机验证（自动装插件、启动编辑器、采集 8 个 RPC、关闭并还原工程）：
 

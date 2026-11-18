@@ -180,14 +180,16 @@ def _check_stdlib_only(failures):
 
 def main():
     failures = []
-    if not os.path.isfile(TOOL_PATH):
-        print("FAIL: missing %s" % TOOL_PATH)
-        print("UPLUGIN_METADATA_RESULT FAIL")
-        return 1
-    tool = _load_tool()
     _check_descriptor(failures)
-    _check_stamp(failures, tool)
-    _check_stdlib_only(failures)
+    if os.path.isfile(TOOL_PATH):
+        tool = _load_tool()
+        _check_stamp(failures, tool)
+        _check_stdlib_only(failures)
+    else:
+        # Standalone package copy (no Tools/): the descriptor contract is
+        # still enforced; the stamp-tool checks are skipped explicitly so
+        # the packaged self-check stays self-sufficient and exits 0.
+        print("SKIP: stamp-tool checks (Tools/stamp_uplugin.py not present in this copy)")
     if failures:
         for failure in failures:
             print("FAIL: %s" % failure)

@@ -1,7 +1,7 @@
 /**
  * 策略矩阵（§5.0.3 / §5.11 / §6.3）。
  */
-import type { PolicyMode, ToolName } from "@uemcp/shared";
+import type { PolicyMode, PolicySource, ToolName } from "@uemcp/shared";
 import {
   READ_ONLY_BLUEPRINT_ACTIONS,
   READ_ONLY_LEVEL_ACTIONS,
@@ -14,6 +14,8 @@ export interface PolicyState {
   allowDestructive: boolean;
   allowConsole: boolean;
   allowExec: boolean;
+  /** B-3.9：策略来源（cli|env|default）；可选以兼容旧构造字面量，审计时未知则省略该键 */
+  source?: PolicySource;
 }
 
 /** §5.11 工具与策略矩阵 */

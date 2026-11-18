@@ -174,7 +174,7 @@ class _CountingDispatcher(object):
     def __init__(self):
         self.calls = 0
 
-    def call(self, fn, timeout_s):
+    def call(self, fn, timeout_s, meta=None):
         self.calls += 1
         return fn()
 

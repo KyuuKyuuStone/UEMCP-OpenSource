@@ -1,0 +1,27 @@
+{
+  "generic": [
+    { "slug": "w-level-get-current", "method": "level.control", "params": { "action": "get_current" } },
+    { "slug": "w-console-stat-fps", "method": "console.command", "params": { "command": "stat fps", "timeoutMs": 8000, "captureOutput": true } },
+    { "slug": "w-console-nonwhitelisted", "method": "console.command", "params": { "command": "Stat.DoesNotExist_QA", "timeoutMs": 5000 } },
+    { "slug": "w-python-exec", "method": "python.exec", "params": { "code": "import unreal\nprint('qa-s4-ok')\n21*2", "resultExpression": true, "timeoutMs": 15000, "captureOutput": true } },
+    { "slug": "w-object-reflect", "method": "object.reflect", "params": { "target": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial" } },
+    { "slug": "w-object-call", "method": "object.call", "params": { "target": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial", "function": "GetName", "args": [] } },
+    { "slug": "w-mat-list", "method": "material.params", "params": { "action": "list", "materialPath": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial" } },
+    { "slug": "w-mat-create-instance", "method": "material.params", "params": { "action": "create_instance", "materialPath": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial", "instancePath": "/Engine/Transient.QA_MatInst", "save": false } },
+    { "slug": "w-bp-compile", "method": "blueprint.query", "params": { "action": "compile", "blueprintPath": "/Game/BP_TriageControl.BP_TriageControl", "save": false } }
+  ],
+  "chain": {
+    "spawn": { "method": "actor.edit", "params": { "operations": [ { "op": "spawn", "class": "StaticMeshActor", "label": "QASmokeW1", "location": { "x": 100.0, "y": 0.0, "z": 0.0 } } ], "dryRun": false } },
+    "setTransform": { "method": "actor.edit", "params": { "operations": [ { "op": "set_transform", "selector": { "kind": "actorPath", "value": "__ACTORPATH__" }, "location": { "x": 500.0, "y": 100.0, "z": 50.0 } } ] } },
+    "setProps": { "method": "actor.edit", "params": { "operations": [ { "op": "set_properties", "selector": { "kind": "actorPath", "value": "__ACTORPATH__" }, "properties": { "mobility": "movable", "tags": { "qa": "s4" } } } ] } },
+    "duplicate": { "method": "actor.edit", "params": { "operations": [ { "op": "duplicate", "selector": { "kind": "actorPath", "value": "__ACTORPATH__" }, "count": 2, "offset": { "x": 0.0, "y": 200.0, "z": 0.0 }, "labelSuffix": "_qadup" } ] } },
+    "dryRun": { "method": "actor.edit", "params": { "operations": [ { "op": "spawn", "class": "StaticMeshActor", "label": "QASmokeDryRun" } ], "dryRun": true } },
+    "findQuery": { "method": "actor.query", "params": { "filter": { "labelContains": "QASmokeW1" }, "fields": ["identity", "transform"], "limit": 20 } },
+    "delete": { "method": "actor.edit", "params": { "operations": [ { "op": "delete", "selector": { "kind": "actorPath", "value": "__ACTORPATH__" }, "confirm": true } ], "atomic": false } }
+  },
+  "pie": {
+    "start": { "method": "pie.control", "params": { "action": "start", "simulate": true, "waitReadyMs": 30000 } },
+    "status": { "method": "pie.control", "params": { "action": "status" } },
+    "stop": { "method": "pie.control", "params": { "action": "stop" } }
+  }
+}

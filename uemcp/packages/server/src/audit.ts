@@ -1,8 +1,9 @@
 /**
  * 审计日志（§6.5）：~/.uemcp/audit/YYYY-MM-DD.jsonl，JSON Lines。
  * - 永不记录 token / 完整 Python 源码（仅 codeSha256 与 codeLength）/ base64（§6.5 红线）。
- * - 写入失败不阻塞工具调用；连续 3 次失败 → auditDegraded。
+ * - 写入失败不阻塞工具调用；连续 3 次失败 → auditDegraded（进入降级瞬间显式 warn）。
  * - 按天轮转；启动时清理 30 天前的文件。
+ * B-3.5 裁决：RETENTION_DAYS=30 硬编码、不可配置（用户契约见根 README 审计小节）。
  */
 import { mkdir, readdir, unlink, open } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -12,6 +13,7 @@ import { createHash } from "node:crypto";
 import type { AuditRecord } from "@uemcp/shared";
 import type { Logger } from "./logger.js";
 
+/** B-3.5：保留期 30 天，硬编码不可配置（裁决；架构文档「(可配置)」表述已同步修正） */
 const RETENTION_DAYS = 30;
 
 export class Audit {
@@ -75,6 +77,13 @@ export class Audit {
         consecutiveFailures: this.consecutiveFailures,
         error: String(err),
       });
+      if (this.consecutiveFailures === 3) {
+        // B-3.5：进入降级（>=3 连续失败）的转换瞬间显式告警；成功写入后计数清零
+        this.log.warn("audit_degraded", {
+          dir: this.dir,
+          consecutiveFailures: this.consecutiveFailures,
+        });
+      }
     }
   }
 }
@@ -112,7 +121,7 @@ export function summarizeArgs(
       summary.save = args.save === true;
       break;
     case "ue_console_command":
-      // §6.5：控制台记录完整命令（可在配置中关闭 hash；MVP 记全文，不含敏感数据）
+      // §6.5：控制台记录完整命令（MVP 记全文；「可配置关闭/改 hash」尚未实现，见架构 §6.5）
       summary.command = args.command;
       summary.worldContext = args.worldContext;
       break;

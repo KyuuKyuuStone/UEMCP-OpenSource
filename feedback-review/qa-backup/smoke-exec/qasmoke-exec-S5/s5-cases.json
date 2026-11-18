@@ -1,0 +1,9 @@
+[
+  { "call": "initialize" },
+  { "call": "tools/list" },
+  { "call": "tools/call", "name": "ue_editor_status", "args": {} },
+  { "call": "tools/call", "name": "ue_python_exec", "args": { "code": "print('qa-s5-accept')\n40+2" }, "elicitation": "accept" },
+  { "call": "tools/call", "name": "ue_python_exec", "args": { "code": "print('qa-s5-should-not-run')" }, "elicitation": "decline" },
+  { "call": "tools/call", "name": "ue_console_command", "args": { "command": "stat fps" }, "elicitation": "accept" },
+  { "call": "tools/call", "name": "ue_actor_edit", "args": { "operations": [ { "op": "spawn", "class": "StaticMeshActor", "label": "QASmokeTSS" } ], "dryRun": true }, "elicitation": "accept" }
+]

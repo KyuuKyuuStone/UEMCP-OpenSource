@@ -1,0 +1,1 @@
+{"code":"import unreal\nresult = unreal.EditorAssetLibrary.rename_asset(\"/Game/__QA_NoSuchAsset__.No\", \"/Game/__QA_NoSuchAsset2__.No2\")\nprint(result)\nresult + 1\n"}

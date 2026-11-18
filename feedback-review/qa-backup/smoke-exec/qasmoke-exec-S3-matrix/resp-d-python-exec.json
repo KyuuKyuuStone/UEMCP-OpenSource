@@ -1,0 +1,33 @@
+{
+  "ts": "2026-11-18T06:54:00.425Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 6034,
+    "method": "python.exec",
+    "params": {
+      "code": "print(1)"
+    }
+  },
+  "httpStatus": 403,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 6034,
+    "error": {
+      "code": -32043,
+      "message": "Python execution is disabled (allowExec=false)",
+      "data": {
+        "errorCode": "EXEC_DISABLED",
+        "retryable": false,
+        "details": {
+          "gate": "bridge.allowExec",
+          "origin": "bridge",
+          "stage": "rpc"
+        }
+      }
+    }
+  },
+  "durationMs": 10
+}

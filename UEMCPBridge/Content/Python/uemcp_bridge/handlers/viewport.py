@@ -619,6 +619,20 @@ def handle(server, params):
             },
         )
 
+    if env.get("pixelStreaming"):
+        # With Pixel Streaming the editor renders into the streaming pipeline
+        # instead of the local viewport, so HighResShot tasks never complete.
+        # Fail fast for every target instead of burning the capture timeout.
+        raise RpcError(
+            "CAPABILITY_UNAVAILABLE",
+            "Viewport capture is unavailable while Pixel Streaming is enabled",
+            {
+                "capability": "screenshot",
+                "renderer": _renderer_details(env),
+                "suggestion": "Disable Pixel Streaming (DefaultWebAPI.ini DataChannelType) and restart the editor, or capture from the Pixel Streaming client instead.",
+            },
+        )
+
     capture_warnings = []
     activation_info = None
     if activate_window:

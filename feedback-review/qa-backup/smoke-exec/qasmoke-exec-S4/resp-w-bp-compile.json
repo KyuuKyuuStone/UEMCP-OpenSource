@@ -1,0 +1,42 @@
+{
+  "ts": "2026-11-18T07:04:26.312Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 3113,
+    "method": "blueprint.query",
+    "params": {
+      "action": "compile",
+      "blueprintPath": "/Game/BP_TriageControl.BP_TriageControl",
+      "save": false
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 3113,
+    "result": {
+      "ok": true,
+      "data": {
+        "blueprintPath": "/Game/BP_TriageControl.BP_TriageControl",
+        "compileState": {
+          "status": "unknown",
+          "errors": 0,
+          "warnings": 0
+        },
+        "saved": false
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 3113,
+        "durationMs": 328,
+        "queuedMs": 234,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 324
+}

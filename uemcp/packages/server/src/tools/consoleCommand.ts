@@ -74,6 +74,7 @@ export const consoleCommandTool: ToolDef = {
       confirmationMode,
       ...(confirmationMode === "policy" ? { confirmationSwitch: "--allow-console" } : {}),
       argsSummary: summarizeArgs(consoleCommandTool.name, rawArgs),
+      errorDetails: res.error?.details, // B-3.7：仅提取 origin/stage 摘要
     });
     if (!res.ok) {
       return errResult(res.error ?? toolError("INTERNAL", "bridge call failed"), meta);

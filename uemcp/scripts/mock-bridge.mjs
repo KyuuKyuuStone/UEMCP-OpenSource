@@ -7,6 +7,7 @@
  * 用法：
  *   node scripts/mock-bridge.mjs [--port 0] [--home <dir>] [--project <dir>]
  *        [--allow-write] [--deny-exec] [--deny-console] [--fail-python] [--dirty]
+ *        [--health-full] [--no-pixel-streaming] [--stale] [--schema-version <n>]
  * stdout 首行输出 JSON：{ port, token, home }（供测试脚本读取）。
  */
 import http from "node:http";
@@ -38,6 +39,14 @@ const flags = {
   allowConsole: args.has("--allow-console"),
   failPython: args.has("--fail-python"),
   dirty: args.has("--dirty"),
+  // B-3.1/B-3.9 测试注入（增量、默认关闭，不影响既有断言）：
+  // --health-full：/health 携带构建身份/能力位/rateLimit/policies/schemaVersion；
+  // --no-pixel-streaming：capabilities.pixelStreaming=false；
+  // --stale：发现文件带 stale 标记；--schema-version <n>：发现文件 schemaVersion（默认 1）。
+  healthFull: args.has("--health-full"),
+  noPixelStreaming: args.has("--no-pixel-streaming"),
+  stale: args.has("--stale"),
+  schemaVersion: args.has("--schema-version") ? Number(args.get("--schema-version")) : 1,
 };
 
 const pieState = { running: false, simulating: false, startedAt: null };
@@ -170,6 +179,8 @@ function dispatch(method, params, meta = {}) {
         total: 2,
         returned: 2,
         truncated: false,
+        // B-3.10：仅当请求携带 maxNodes 时回显（验证 TS 透传；缺省不改变既有响应）
+        ...(params.maxNodes !== undefined ? { maxNodesReceived: params.maxNodes } : {}),
         assets: [
           { packageName: "/Game/Materials/M_Test", objectPath: "/Game/Materials/M_Test.M_Test", assetName: "M_Test", class: "Material" },
           { packageName: "/Game/Materials/MI_Test", objectPath: "/Game/Materials/MI_Test.MI_Test", assetName: "MI_Test", class: "MaterialInstanceConstant" },
@@ -340,7 +351,8 @@ function dispatch(method, params, meta = {}) {
       if (!flags.allowExec)
         return { __err: rpcErrTemplate("EXEC_DISABLED", -32043, "Bridge allowExec=false", { gate: "bridge.allowExec" }) };
       if (flags.failPython)
-        return { __err: rpcErrTemplate("PYTHON_ERROR", -32014, "Traceback (most recent call last):\n  ValueError: uemcp-test") };
+        // B-3.7：桥接并行在 PYTHON_ERROR details 增加 origin/stage（TS 审计仅提取摘要，不记录全文）
+        return { __err: rpcErrTemplate("PYTHON_ERROR", -32014, "Traceback (most recent call last):\n  ValueError: uemcp-test", { origin: "bridge", stage: "python_exec" }) };
       if (params.mode === "eval" && params.code === "1+1")
         return ok({ mode: "eval", result: 2, stdout: "", stderr: "", durationMs: 1, timedOut: false, timeoutMsReceived: meta.timeoutMs });
       return ok({ mode: params.mode ?? "exec", result: null, stdout: "", stderr: "", durationMs: 1, timedOut: false, timeoutMsReceived: meta.timeoutMs });
@@ -376,7 +388,7 @@ function rpcErrTemplate(errorCode, rpcCode, message, details) {
 function writeDiscovery(actualPort) {
   const hash = createHash("sha1").update(projectDir).digest("hex").slice(0, 16);
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: flags.schemaVersion,
     pid: process.pid,
     projectDir,
     projectFile: "XQHCPP_54.uproject",
@@ -390,7 +402,11 @@ function writeDiscovery(actualPort) {
     capabilities: {
       python: true, screenshot: true, blueprintRead: true, blueprintNodeRead: false,
       blueprintCompile: true, animBlueprintEdit: false, assetRegistry: true, console: true,
+      // B-3.3：仅 --no-pixel-streaming 时注入能力位（默认缺失 → TS 预检优雅跳过）
+      ...(flags.noPixelStreaming ? { pixelStreaming: false } : {}),
     },
+    // B-3.9：--stale 注入过期标记（TS 发现应拒绝并告警）
+    ...(flags.stale ? { stale: true, staleReason: "mock-stale", staleAt: startedAt } : {}),
     startedAt,
   };
   const dir = join(home, ".uemcp");
@@ -410,7 +426,25 @@ function writeDiscovery(actualPort) {
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ app: "uemcp-bridge", ok: true, pid: process.pid, startedAt, ueVersion: "5.4.4", pluginVersion: "0.1.0", projectDir }));
+    // B-3.1：--health-full 注入构建身份/能力位/rateLimit/policies/schemaVersion（对齐真实桥接并行字段）；
+    // --no-pixel-streaming 单独注入 capabilities.pixelStreaming=false；默认保持最小载荷（缺失容忍）。
+    const health = { app: "uemcp-bridge", ok: true, pid: process.pid, startedAt, ueVersion: "5.4.4", pluginVersion: "0.1.0", projectDir };
+    if (flags.healthFull) {
+      Object.assign(health, {
+        instanceId: `mock-${process.pid}`,
+        buildHash: "0".repeat(64),
+        buildTime: startedAt,
+        sourcePath: join(home, "UEMCPBridge"),
+        bridgeProtocol: 1,
+        schemaVersion: flags.schemaVersion,
+        rateLimit: { rpcPerMinute: 600 },
+        policies: { allowWrite: flags.allowWrite, allowExec: flags.allowExec, allowConsole: flags.allowConsole },
+        capabilities: { python: true, screenshot: true, blueprintRead: true, blueprintNodeRead: false, blueprintCompile: true, animBlueprintEdit: false, assetRegistry: true, console: true, pixelStreaming: !flags.noPixelStreaming },
+      });
+    } else if (flags.noPixelStreaming) {
+      health.capabilities = { pixelStreaming: false };
+    }
+    res.end(JSON.stringify(health));
     return;
   }
   if (req.method === "POST" && req.url === "/rpc") {

@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 
-PLUGIN_VERSION = "0.1.5"
+PLUGIN_VERSION = "0.1.6"
 BRIDGE_PROTOCOL = 1
 
 DEFAULT_PORT = 18778
@@ -85,6 +85,7 @@ class Settings(object):
         "rate_limit_burst",
         "token_override",
         "source",
+        "env_overrides",
     )
 
     def __init__(
@@ -102,6 +103,7 @@ class Settings(object):
         rate_limit_burst=DEFAULT_RATE_LIMIT_BURST,
         token_override=None,
         source="defaults",
+        env_overrides=(),
     ):
         self.port = port
         self.allow_write = bool(allow_write)
@@ -116,11 +118,13 @@ class Settings(object):
         self.rate_limit_burst = rate_limit_burst
         self.token_override = token_override
         self.source = source
+        self.env_overrides = tuple(env_overrides)
 
     @classmethod
     def load(cls, project_dir):
         data = {}
         source = "defaults"
+        env_overrides = []
         settings_path = Path(project_dir) / "Saved" / "UEMCP" / "bridge-settings.json"
         if settings_path.is_file():
             try:
@@ -136,6 +140,9 @@ class Settings(object):
 
         def pick(key, env_key, default):
             if env_key in os.environ:
+                # Presence-based: the env var won the lookup chain even if its
+                # value later fails parsing and falls back to the default.
+                env_overrides.append(env_key)
                 return os.environ[env_key]
             return data.get(key, default)
 
@@ -169,7 +176,11 @@ class Settings(object):
             120000,
         )
         search_timeout_ms = _as_int(
-            data.get("searchTimeoutMs", DEFAULT_SEARCH_TIMEOUT_MS),
+            pick(
+                "searchTimeoutMs",
+                "UEMCP_BRIDGE_SEARCH_TIMEOUT_MS",
+                DEFAULT_SEARCH_TIMEOUT_MS,
+            ),
             DEFAULT_SEARCH_TIMEOUT_MS,
             1000,
             120000,
@@ -210,6 +221,7 @@ class Settings(object):
         token_override = None
         token_file = os.environ.get("UEMCP_BRIDGE_TOKEN_FILE")
         if token_file:
+            env_overrides.append("UEMCP_BRIDGE_TOKEN_FILE")
             try:
                 with open(token_file, "r", encoding="utf-8") as handle:
                     candidate = handle.read().strip()
@@ -232,6 +244,7 @@ class Settings(object):
             rate_limit_burst=rate_limit_burst,
             token_override=token_override,
             source=source,
+            env_overrides=env_overrides,
         )
 
     def policy_snapshot(self):
@@ -244,5 +257,8 @@ class Settings(object):
             "mode": mode,
             "write": self.allow_write,
             "exec": self.allow_exec,
+            "console": self.allow_console,
             "destructive": False,
+            "source": self.source,
+            "envOverrides": list(self.env_overrides),
         }

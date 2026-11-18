@@ -30,7 +30,7 @@ class _FakeServer(object):
 
 
 class _TimeoutDispatcher(object):
-    def call(self, fn, timeout_s):
+    def call(self, fn, timeout_s, meta=None):
         raise DispatcherTimeout("simulated timeout")
 
     def shutdown(self):

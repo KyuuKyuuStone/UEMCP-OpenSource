@@ -57,6 +57,7 @@ export const materialParamsTool: ToolDef = {
         errorCode: res.ok ? null : (res.error?.code ?? "INTERNAL"),
         decision: "allowed",
         argsSummary: summarizeArgs(materialParamsTool.name, rawArgs),
+        errorDetails: res.error?.details, // B-3.7：仅提取 origin/stage 摘要
       });
     }
     if (!res.ok) {

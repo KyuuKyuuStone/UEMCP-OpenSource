@@ -66,7 +66,11 @@ def handle(server, params):
         raise RpcError(
             "PYTHON_ERROR",
             detail.strip().splitlines()[-1] if detail.strip() else "Python error",
-            {"traceback": _truncate(detail)},
+            {
+                "traceback": _truncate(detail),
+                "origin": "caller",
+                "stage": "python.exec",
+            },
         )
 
     duration_ms = int((time.monotonic() - started) * 1000)

@@ -1,0 +1,50 @@
+{
+  "ts": "2026-11-18T07:04:21.890Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 7524,
+    "method": "actor.edit",
+    "params": {
+      "operations": [
+        {
+          "op": "set_transform",
+          "selector": {
+            "kind": "actorPath",
+            "value": "/"
+          },
+          "location": {
+            "x": 500,
+            "y": 100,
+            "z": 50
+          }
+        }
+      ]
+    }
+  },
+  "httpStatus": 409,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 7524,
+    "error": {
+      "code": -32024,
+      "message": "Transaction rolled back after ACTOR_NOT_FOUND: Actor not found: / (actorPath)",
+      "data": {
+        "errorCode": "TRANSACTION_FAILED",
+        "retryable": false,
+        "details": {
+          "rolledBack": true,
+          "reason": "ACTOR_NOT_FOUND",
+          "failedIndex": 0,
+          "succeeded": 0,
+          "failed": 1,
+          "stage": "actor.edit",
+          "origin": "bridge"
+        }
+      }
+    }
+  },
+  "durationMs": 228
+}

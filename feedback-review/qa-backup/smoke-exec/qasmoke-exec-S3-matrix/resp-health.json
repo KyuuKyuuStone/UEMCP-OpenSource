@@ -1,0 +1,75 @@
+{
+ "ok": true,
+ "status": 200,
+ "keyCount": 18,
+ "keys": [
+  "app",
+  "bridgeProtocol",
+  "buildHash",
+  "buildTime",
+  "capabilities",
+  "instanceId",
+  "ok",
+  "pid",
+  "pluginVersion",
+  "policies",
+  "port",
+  "projectDir",
+  "projectFile",
+  "rateLimit",
+  "schemaVersion",
+  "sourcePath",
+  "startedAt",
+  "ueVersion"
+ ],
+ "body": {
+  "app": "uemcp-bridge",
+  "schemaVersion": 1,
+  "ok": true,
+  "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+  "pluginVersion": "0.1.5",
+  "bridgeProtocol": 1,
+  "port": 18778,
+  "pid": 25468,
+  "instanceId": "27d8bc094f504181b4873c7b04cced6f",
+  "buildHash": "5f965b17f93caabd376c93173bce8570a3844ae20468b4956804cdb134742f37",
+  "buildTime": "2026-11-03T08:22:56.010820Z",
+  "sourcePath": "C:\\Users\\Administrator\\Documents\\Unreal Projects\\UEMCP_Smoke_Blank\\Plugins\\UEMCPBridge",
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "projectFile": "UEMCP_Smoke_Blank.uproject",
+  "startedAt": "2026-11-18T06:53:51.313852Z",
+  "capabilities": {
+   "python": true,
+   "screenshot": true,
+   "blueprintRead": true,
+   "blueprintNodeRead": false,
+   "blueprintCompile": true,
+   "animBlueprintEdit": false,
+   "assetRegistry": true,
+   "console": true,
+   "pieControl": true,
+   "pixelStreaming": false
+  },
+  "rateLimit": {
+   "enabled": true,
+   "perSecond": 30,
+   "burst": 30,
+   "available": 29,
+   "accepted": 13,
+   "rejected": 0
+  },
+  "policies": {
+   "mode": "read-only",
+   "write": false,
+   "exec": false,
+   "console": false,
+   "destructive": false,
+   "source": "defaults",
+   "envOverrides": [
+    "UEMCP_BRIDGE_ALLOW_WRITE",
+    "UEMCP_BRIDGE_ALLOW_EXEC",
+    "UEMCP_BRIDGE_ALLOW_CONSOLE"
+   ]
+  }
+ }
+}

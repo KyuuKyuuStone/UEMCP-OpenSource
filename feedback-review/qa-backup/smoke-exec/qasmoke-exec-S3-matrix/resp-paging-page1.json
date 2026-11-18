@@ -1,0 +1,61 @@
+{
+  "ts": "2026-11-18T06:54:01.211Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9625,
+    "method": "asset.search",
+    "params": {
+      "path": "/Engine/BasicShapes",
+      "limit": 2,
+      "offset": 0
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 9625,
+    "result": {
+      "ok": true,
+      "data": {
+        "total": 10,
+        "returned": 2,
+        "truncated": true,
+        "nextOffset": 2,
+        "assets": [
+          {
+            "packageName": "/Engine/BasicShapes/BasicShapeMaterial",
+            "objectPath": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial",
+            "assetName": "BasicShapeMaterial",
+            "class": "Material",
+            "classPath": "/Script/Engine.Material",
+            "packagePath": "/Engine/BasicShapes",
+            "isRedirector": false,
+            "diskSize": 0
+          },
+          {
+            "packageName": "/Engine/BasicShapes/BasicShapeMaterial_Inst",
+            "objectPath": "/Engine/BasicShapes/BasicShapeMaterial_Inst.BasicShapeMaterial_Inst",
+            "assetName": "BasicShapeMaterial_Inst",
+            "class": "MaterialInstanceConstant",
+            "classPath": "/Script/Engine.MaterialInstanceConstant",
+            "packagePath": "/Engine/BasicShapes",
+            "isRedirector": false,
+            "diskSize": 0
+          }
+        ]
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 9625,
+        "durationMs": 14,
+        "queuedMs": 14,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 19
+}

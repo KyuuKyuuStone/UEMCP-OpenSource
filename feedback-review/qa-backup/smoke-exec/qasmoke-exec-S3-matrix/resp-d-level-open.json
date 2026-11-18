@@ -1,0 +1,34 @@
+{
+  "ts": "2026-11-18T06:53:59.924Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9482,
+    "method": "level.control",
+    "params": {
+      "action": "open",
+      "levelPath": "/Engine/Maps/Templates/Template_Default"
+    }
+  },
+  "httpStatus": 403,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 9482,
+    "error": {
+      "code": -32003,
+      "message": "Write operations are disabled (allowWrite=false)",
+      "data": {
+        "errorCode": "PERMISSION_DENIED",
+        "retryable": false,
+        "details": {
+          "gate": "bridge.allowWrite",
+          "origin": "bridge",
+          "stage": "rpc"
+        }
+      }
+    }
+  },
+  "durationMs": 11
+}

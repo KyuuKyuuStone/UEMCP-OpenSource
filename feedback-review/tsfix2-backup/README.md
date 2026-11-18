@@ -1,0 +1,624 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-on-dark.svg">
+    <img src="assets/logo.svg" alt="UEMCP logo" width="150">
+  </picture>
+</p>
+
+<p align="center"><a href="#中文">中文</a> · <a href="#english">English</a></p>
+
+<p align="center"><sub>品牌素材 / Brand assets：<a href="assets/README.md">assets/README.md</a></sub></p>
+
+# UEMCP
+
+> **Unreal and Unreal Engine are trademarks or registered trademarks of Epic Games, Inc. in the United States and elsewhere. This project is an independent, community-developed tool and is not affiliated with, endorsed by, or sponsored by Epic Games, Inc. "Unreal" is used solely to describe compatibility with Unreal Engine. All other trademarks are the property of their respective owners.**
+
+## 中文
+
+UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Context Protocol）服务：用 Claude Code、Cursor 或任意 HTTP 客户端，通过标准 MCP 协议操作**当前打开的编辑器**——查询与编辑 Actor、管理关卡、搜索资产、调整材质实例参数、截取视口、查询与编译蓝图。
+
+- **客户端无关**：MCP 协议是唯一边界，不内嵌聊天 UI（Streamable HTTP / 旧版 SSE / stdio 三种传输）。
+- **仅编辑器**：直接作用于编辑器进程，不解析离线 `.uasset`，不支持打包后的运行时游戏。
+- **本地优先**：默认只绑定 `127.0.0.1`，开箱即用，无需部署。
+- **UE 侧零编译**：纯 Python 插件，不需要 C++ 工具链；UE 侧仅依赖 Python 标准库。
+
+> 适用引擎：UE **5.4 / 5.7**（实测 5.4.4 / 5.7.4）。状态：MVP（v0.1.2），API 可能随迭代调整。
+
+---
+
+### 特性（15 个工具）
+
+| 工具 | 用途 | 默认可见 |
+|---|---|---|
+| `ue_editor_status` | 编辑器/当前关卡/选中 Actor/视口相机/能力/策略总览 | 是 |
+| `ue_actor_query` | 按类/名称/标签/目录查询 Actor，分页返回 | 是 |
+| `ue_actor_edit` | 批量生成/删除/变换/复制/选择 Actor、修改受控属性（事务+回滚+dryRun） | standard 起 |
+| `ue_level_control` | 查询当前关卡与脏包；打开/保存/新建关卡 | 是（写动作 standard 起） |
+| `ue_asset_search` | 按路径/名称/类搜索资产；查询依赖与反向引用 | 是 |
+| `ue_material_params` | 读取材质/实例参数；设置材质实例参数；创建实例 | 是（写动作 standard 起） |
+| `ue_viewport_capture` | 截取关卡视口或 PIE 画面（PNG/JPEG）；`activateWindow`（**默认 false**，不传则不置前）开启后置前并校验前台，失败**立即** `EDITOR_UNSAFE_STATE` 而非干等超时；返回**绝对路径** + `sha256` + `stats`（可自判空图） | 是 |
+| `ue_blueprint` | 查询蓝图结构（父类/生成类/类型/命名图）；触发编译（变量与节点数受引擎限制，见已知限制） | 是 |
+| `ue_pie_control` | 启停 PIE：`start`/`stop`/`restart`/`status`，可选 `simulate`；**不再需要 `--allow-exec`**（写动作走 `allowWrite`） | 是（只读下仅 `status`） |
+| `ue_policy_explain` | 列出每个工具在当前策略下是否可见及原因（`server.policy` / `--allow-console` / `--allow-exec`） | 是 |
+| `ue_reflect` | 反射任意对象/关卡 Actor 上**可调用的函数清单**（名字、参数个数），替代「grep 源码才知道有哪些命令」 | 是 |
+| `ue_call_function` | **按名调用任意 `BlueprintCallable` 函数**，JSON 传参；有返回值直接回，`void` 返回 `returnedVoid:true` 并可用 `captureLog:true` 拿调用窗口日志（`logLines`）；通用能力，不需要使用者改自己的框架 | standard 起（需 Bridge `allowWrite`） |
+| `ue_log_query` | 按正则/级别/时间窗检索编辑器日志，返回命中行与行号；只能读本工程 `Saved/Logs/`。级别规则：显式 `: Error:`/`: Warning:` 等段优先，`LogXxx:` 隐式行视为 `Log`，无法判定则 `level=null`（不计入 levels 过滤，带 `unclassified` 计数） | 是 |
+| `ue_console_command` | 执行控制台命令（白名单限制） | **默认隐藏** |
+| `ue_python_exec` | 在编辑器游戏线程执行 Python（无沙箱） | **默认隐藏** |
+
+**明确不支持**：PIE 内 Actor 操作、蓝图节点创建/连线/动画蓝图编辑（需 P2 C++ 模块）、材质节点图编辑、资产导入/导出/移动、控制台输出回读、编辑器 UI/Slate 操作、Sequencer/Niagara、远程多人服务。
+
+---
+
+### 架构
+
+```text
+┌──────────────────────────┐
+│ MCP 客户端（任选）        │  Claude Code / Cursor / curl / 自研
+└────────────┬─────────────┘
+             │ MCP 协议：stdio 或 Streamable HTTP(:18777/mcp) 或 旧版 SSE(:18777/sse)
+             ▼
+┌──────────────────────────────────────────────┐
+│ UEMCP Server（Node.js/TypeScript，:18777）    │
+│ 会话管理 / 策略门 / 桥接发现 / 审计 / 限流    │
+└────────────┬─────────────────────────────────┘
+             │ HTTP JSON-RPC 2.0 + X-UEMCP-Token
+             ▼
+┌──────────────────────────────────────────────────────┐
+│ UEMCPBridge（UE 5.4/5.7 编辑器内，纯 Python，:18778）│
+│ ThreadingHTTPServer + 游戏线程单队列                 │
+└────────────┬─────────────────────────────────────────┘
+             │ unreal.* Python API（仅游戏线程）
+             ▼
+        UE 5.4/5.7 编辑器（World / Actor / AssetRegistry / Viewport）
+```
+
+- 桥接启动后写发现文件 `~/.uemcp/`；Server 自动发现并校验（pid/health 双重校验，陈旧文件自动跳过）。
+- 编辑器内所有 `unreal.*` 调用经游戏线程队列执行，HTTP 线程零引擎调用。
+- 默认端口：Server `18777`（被占则**失败退出**，显式换端口）；Bridge `18778`（被占则自动回退 18779–18788）。
+
+---
+
+### 环境要求
+
+- Unreal Engine **5.4.x** + PythonScriptPlugin + EditorScriptingUtilities（引擎自带；实测 5.4.4）
+- Unreal Engine **5.7.x** + 同上三个插件（引擎自带；实测 5.7.4）
+- Node.js **>= 20**、pnpm 11（或 corepack）
+- 无需 Python 包管理（UE 侧仅标准库）；无需 C++ 编译
+
+### 下载
+
+当前版本 **v0.1.5**，四个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
+
+- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.4.zip>
+- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.7.zip>
+- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/SHA256SUMS.txt>
+
+安装三步：
+
+1. 解压到 `<YourProject>/Plugins/`，得到 `Plugins/UEMCPBridge/`。
+2. 启用 `UEMCPBridge`、`PythonScriptPlugin`、`EditorScriptingUtilities`（`.uproject` 写法见下节）。
+3. 启动编辑器后执行 `curl http://127.0.0.1:18778/health`，返回 `"app":"uemcp-bridge"` 即就绪。
+
+> 不用发行包时，把仓库里的 `UEMCPBridge/` 目录放进 `Plugins/` 等价。
+
+> 插件为纯 Python，下载后无需编译：解压到 `Plugins/` 后由编辑器直接加载。
+
+### 安装（UE 侧插件）
+
+1. 复制 `UEMCPBridge/` 到 `<Project>/Plugins/UEMCPBridge/`。
+2. 在 `<Project>.uproject` 启用三个插件：
+
+```json
+"Plugins": [
+  { "Name": "UEMCPBridge", "Enabled": true },
+  { "Name": "PythonScriptPlugin", "Enabled": true },
+  { "Name": "EditorScriptingUtilities", "Enabled": true }
+]
+```
+
+3. 启动编辑器（桥接自动拉起），验证：
+
+```bash
+curl -s http://127.0.0.1:18778/health
+# 预期 "app": "uemcp-bridge"，含 ueVersion / port / pid / capabilities
+```
+
+### 在生产项目中使用
+
+接到真实工程前，按这个顺序做：
+
+1. **先备份，或确保版本控制是干净的。** 插件不会自动存盘，但编辑器里的改动会被后续保存写入工程；没有备份就不要开始。
+2. **第一轮只用只读。** 默认策略就是 `read-only`（7 个只读工具）。先用 `editor.status` / `actor.query` / `asset.search` 核对返回是否符合预期；大工程重点看 `asset.search` 的耗时与 `SEARCH_TIMEOUT`（默认 20s，可用 `searchTimeoutMs` 调大）。
+3. **写操作先 `dryRun`。** `actor.edit` 支持 `dryRun: true` 预演，确认变更清单后再真实执行；真实写入在编辑器事务内完成，**可用 `Ctrl+Z` 撤销**。
+4. **`allowWrite` 按需临时开启，用完立即关闭。** Server 用 `--policy standard`，Bridge 设 `"allowWrite": true`，两边都要开；Bridge 配置只在启动时读取，**改完立即改回 `false` 并重启编辑器**。
+5. **截图/视口操作时保持编辑器窗口在前台。** 无焦点时 UE 会把 tick 降到约 3 fps，`viewport.capture` 可能返回 `CAPTURE_TIMEOUT`；保持窗口可见，或增大 `timeoutMs`，或重试。
+6. **生产环境不要开 `allowExec` / `allowConsole`**，除非你清楚这是把编辑器控制权交出去——无沙箱，执行也不可中断。
+7. **多人/多会话并发要留余量。** Server 侧每会话 20 req/s、Bridge 全局 30 req/s；多人同时使用或批量调用可能收到 `RATE_LIMITED`（HTTP 429），退避后重试。
+
+### 构建与运行（Server 侧）
+
+#### 安装 Server（离线 tgz，无需 clone 仓库）
+
+前置：Node.js ≥ 20。该包**未发布到 npm registry**（`npm view @uemcp/server` 返回 404 属预期），只能从 Release 附件下载。
+
+1. 从最新 Release 下载 [`uemcp-server-0.1.5.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/uemcp-server-0.1.5.tgz)（709,310 B；SHA256 `b8f14de98496d0c8f7b15ff35e4e30200f1226df827c043ce9d0a95ad9da6c29`，完整值见 `SHA256SUMS.txt` 第三行）。
+2. 全局安装（纯本地，不访问 registry）：
+
+```bash
+npm install -g ./uemcp-server-0.1.5.tgz
+```
+
+3. 启动并自检：
+
+```bash
+uemcp --transport http --policy read-only
+curl -s http://127.0.0.1:18777/health   # 预期 {"ok":true,...}
+```
+
+> 该产物是 esbuild 打出的**全量 bundle**（无外部依赖），不是官方 `pnpm pack` 的产物——后者因 `workspace:*` 依赖在安装时会 404，不要引导用户使用。
+
+#### 从源码构建（开发用途）
+
+```bash
+cd uemcp
+pnpm install
+pnpm build          # 产物：packages/server/dist/index.js
+pnpm typecheck      # 可选：类型检查
+```
+
+```bash
+# 前台运行（HTTP，默认 127.0.0.1:18777，默认策略 read-only）
+node packages/server/dist/index.js --transport http --policy standard
+
+# stdio 模式（stdout 仅 MCP 帧，日志走 stderr）
+node packages/server/dist/index.js --transport stdio
+```
+
+Windows 长驻建议用分离进程脚本（避免随终端会话被回收）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1 -Port 18777 -Policy standard
+powershell -ExecutionPolicy Bypass -File scripts\stop-server.ps1
+```
+
+常用参数：`--port N`、`--policy read-only|standard|full`、`--project <dir>`（多工程时建议显式指定）、`--bridge-url`、`--auth-token`、`--allow-destructive`、`--allow-console`、`--allow-exec`、`--disable-legacy-sse`。完整参数与环境变量见 [uemcp/README-DEV.md](uemcp/README-DEV.md)。
+
+### MCP 客户端接入
+
+**Claude Code（HTTP，推荐）**：
+
+```bash
+claude mcp add --transport http uemcp http://127.0.0.1:18777/mcp
+claude mcp list        # 预期：uemcp ✓ Connected
+```
+
+**Claude Code / CLI（stdio 配置）**：
+
+```json
+{
+  "mcpServers": {
+    "uemcp": {
+      "command": "node",
+      "args": ["<仓库路径>/uemcp/packages/server/dist/index.js", "--transport", "stdio", "--policy", "standard"]
+    }
+  }
+}
+```
+
+**Cursor**（`.cursor/mcp.json`；按客户端版本二选一）：
+
+Cursor 0.45.x（旧版 SSE 基线，D2 裁决）：
+
+```json
+{ "mcpServers": { "uemcp": { "url": "http://127.0.0.1:18777/sse" } } }
+```
+
+Cursor 0.46+：
+
+```json
+{ "mcpServers": { "uemcp": { "url": "http://127.0.0.1:18777/mcp" } } }
+```
+
+> 注：0.46+ 的 `/mcp`（Streamable HTTP）**未实测**；需要稳定接入时可回退到旧版 `/sse`（0.45.x 实测可用，架构 §3.4）。
+
+**任意 HTTP 客户端（curl）**：
+
+```bash
+curl -s -D - -X POST http://127.0.0.1:18777/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
+# 从响应头取 Mcp-Session-Id，后续请求携带该头即可 tools/list、tools/call
+# 完整四步序列见 HANDOFF.md §5.4
+```
+
+### 安全默认与开启写操作
+
+默认一切只读、仅回环、双向权限门（Server 策略 × Bridge 配置）、审计日志（不含 token 与 Python 源码）、Host/Origin 校验、令牌桶限流；桥接 token 每次编辑器启动轮换。详见 [UEMCPBridge/README.md](UEMCPBridge/README.md) 与架构文档 §6。
+
+开启顺序（两端都要开）：
+
+1. **写操作**：Server `--policy standard` 起；Bridge 在 `<Project>/Saved/UEMCP/bridge-settings.json` 设 `"allowWrite": true`（或环境变量 `UEMCP_BRIDGE_ALLOW_WRITE`）后重启编辑器。
+2. **控制台 / Python**（默认隐藏，风险自担）：Server `--policy full --allow-console` / `--allow-exec`；Bridge 对应 `allowConsole` / `allowExec`。每次调用仍需确认（支持 elicitation 的客户端会弹确认；否则开关即策略级确认并记入审计）。
+
+#### 可追溯与会话行为（v0.1.4）
+
+- `/health` 额外返回 `buildHash`（插件 Python 全量 sha256）、`buildTime`、`sourcePath`（实际加载的插件目录）、`instanceId`——升级后用它判断「装的是不是新版」「是不是加载了备份目录那份」。
+- 会话有空闲 **TTL（默认 30 分钟）**与**会话数上限（默认 32，可用 `--max-sessions` / `UEMCP_MAX_SESSIONS` 调小）**；满仓时逐出最老的**空闲**会话（正在推流的 SSE 会话不动），只有全部会话都在推流才返回 429（带 `retryAfterMs`）。
+- `initialize` 响应带 `Mcp-Session-Expires-In-Ms`；会话失效返回 `404 -32001` 且 `data.hint="reinitialize"`，客户端据此重建会话即可自愈。
+- **审计日志契约（0.1.5 第二批明确）**：`~/.uemcp/audit/YYYY-MM-DD.jsonl` 按天轮转、**固定保留 30 天（`RETENTION_DAYS` 常量，不可配置）**、启动时清理过期文件；**全部工具调用均记录**（含只读工具），失败记录带 `errorCode` 与桥接 `origin`/`stage`，每条附 `policySnapshot`（Server mode/source/开关 + 桥接 policies/rateLimit）、`schemaVersion` 与桥接连接期间的构建身份（`instanceId`/`buildHash`/`buildTime`/`sourcePath`）；审计写失败**从不阻塞**工具调用，连续 3 次失败即在 stderr 告警并在 `/health` 标 `auditDegraded=true`；stdio 为单会话，记录不含 `sessionId`（仅 HTTP 传输有）。永不记录 token、Python 源码、截图 base64。
+
+> ⚠️ **本机开发工具的固有风险**：开启 `ue_python_exec` 等于把编辑器进程控制权交给调用方（无沙箱、执行不可中断）；本机恶意程序读取 `~/.uemcp/bridge.json` 可取得桥接 token。这是本地开发工具的固有边界，请在可信环境使用；不要在录屏、演示、CI 中开启 exec。
+
+### 测试
+
+```bash
+cd uemcp
+pnpm smoke        # Server 自测：SMOKE RESULT: 87/87 passed
+pnpm test         # node --test：单测 + 黑盒 82 项
+pnpm typecheck && pnpm build
+```
+
+UE 侧自检（无需引擎的 20 个脚本 + 需引擎的 4 个）见 [UEMCPBridge/README.md](UEMCPBridge/README.md) §7。测试端口约定：smoke 用 18999/19001–19008、单测用 19101–19199，避开真实服务端口 18777/18778。
+
+### 目录结构
+
+```text
+├─ UEMCPBridge/        # UE 5.4/5.7 纯 Python 插件（桥接 + 自测脚本）
+├─ uemcp/              # MCP Server（pnpm workspace：packages/shared + packages/server）
+│  ├─ packages/shared/ # 工具名、zod Schema、错误码（@uemcp/shared）
+│  ├─ packages/server/ # CLI、传输、发现、策略、审计、15 工具（@uemcp/server）
+│  ├─ scripts/         # smoke.mjs、mock-bridge.mjs、start/stop-server.ps1
+│  └─ tests/           # node --test 单测与黑盒
+├─ docs/               # 架构设计 v0.2.0、裁决记录、测试计划与报告、代码审查报告
+├─ LICENSE             # MIT
+└─ HANDOFF.md          # 接手者指南（含完整快速开始与发布清单）
+```
+
+### 文档索引
+
+| 文档 | 内容 |
+|---|---|
+| [docs/UEMCP-架构设计.md](docs/UEMCP-架构设计.md) | 架构基线 v0.2.0：端口/发现/错误模型/安全模型 + MVP 10 工具 Schema（现共 15 工具，0.1.1–0.1.5 新增 5 个以 `uemcp/packages/shared/src/toolNames.ts` 为准） |
+| [docs/UEMCP-路线图.md](docs/UEMCP-路线图.md) | 路线图：已做 / 在做 / 计划 / 明确不做（每条含原因与替代方案） |
+| [docs/UEMCP-架构裁决补充.md](docs/UEMCP-架构裁决补充.md) | 7 项关键决策记录（错误码表/确认流/端口策略等） |
+| [uemcp/README-DEV.md](uemcp/README-DEV.md) | 开发者文档：构建/运行/部署/自测/实现契约/已知限制 |
+| [UEMCPBridge/README.md](UEMCPBridge/README.md) | UE 侧：安装/配置/安全/RPC 方法表/自测 |
+| [docs/UEMCP-测试执行报告.md](docs/UEMCP-测试执行报告.md) | 实测结论与覆盖范围 |
+| [docs/UEMCP-代码审查报告.md](docs/UEMCP-代码审查报告.md) | 两轮审查记录 |
+| [HANDOFF.md](HANDOFF.md) | 接手者指南（项目状态/已知限制/发布清单/待办） |
+
+### 常见使用坑（升级与排错必读）
+
+业务团队两天真实试用中踩到、并为此浪费过排查时间的三个坑（与 [UEMCPBridge/README.md](UEMCPBridge/README.md) §13 一致）：
+
+1. **`Plugins/` 目录扫描坑：升级备份可能顶掉新版。** `Plugins/` 下任何含 `.uplugin` 描述符的目录都会被引擎当作插件扫描。做升级备份时如果直接把 `UEMCPBridge` 复制成 `Plugins/UEMCPBridge.bak`，备份里的旧描述符仍会被扫描；当日志出现 `second location will be ignored` 时，引擎实际加载运行的**可能仍是旧代码**。正确做法：备份时把描述符一并改名（如 `UEMCPBridge.uplugin.bak`），或把整个备份目录移出 `Plugins/`。
+2. **版本辨识：只看 `pluginVersion` 不够。** 历史上出现过两个不同构建共用同一个版本号的情况。升级后请核对 `GET /health` 的 `buildHash` 与 `sourcePath`（**本版新增**字段）：字段存在且值与升级前不同，才说明引擎加载了新构建；若 `/health` 响应里没有这两个字段，说明加载的仍是旧包（结合第 1 条排查 `Plugins/` 下的多副本）。
+3. **两个会导向错误结论的 Python 绑定：**
+   - `unreal.GameplayStatics.project_world_to_screen` 返回 **`Vector2D`**，不是 `(bool, Vector2D)` 元组——按“返回值第一位是 bool”写出的判断会静默地得出错误结论。
+   - `TraceTypeQuery` 可用的枚举成员名与直觉不同：不要照搬 C++ 的 trace channel 名，先用 Python 打印 `unreal.TraceTypeQuery` 的实际成员，再写代码。
+
+### 已知限制
+
+- 蓝图：节点创建/连线/删除与动画蓝图编辑**不支持**（`CAPABILITY_UNAVAILABLE`，需 P2 C++ 模块）。`blueprint.query` 现在能读到**父类 / 生成类 / 蓝图类型 / `EventGraph` / `UserConstructionScript` / `AnimGraph`**；但**变量列表与每图节点数读不到**（`UBlueprint.NewVariables`、`EdGraph.Nodes` 是引擎 protected 属性，需 C++ 模块），返回里会带 `variablesUnavailable` 说明而不是假空数组。
+- PIE 运行中的 Actor 编辑**不支持**：写操作返回 `EDITOR_UNSAFE_STATE`，只读查询仍可用。
+- 本插件只作用于编辑器进程：不解析离线 `.uasset`，不操作打包后的运行时。
+- 编辑器窗口失去焦点/最小化时，UE 会降低 tick 频率（实测约 3.1 fps），`viewport.capture` 可能返回 `CAPTURE_TIMEOUT`（HTTP 504 / `-32037` / `retryable=true`）。传 `activateWindow: true` 时桥接会置前并**校验前台**：若窗口仍最小化或未能置前，会**立即**返回 `EDITOR_UNSAFE_STATE`（`reason=window_not_foreground`），不再干等到超时；保持窗口在前台，或传 `activateWindow: false` 自行保证前台。
+- `level.control` 的 `list_dirty`：`actor.edit` 做 spawn/delete 后该关卡包仍会报脏（UE 在内存中增删即置脏，删除不会还原），但磁盘上的 `.umap` 未变（实测三个 umap 的 SHA-256 前后一致）。看到 dirty 不等于磁盘已变，是否落盘由你决定是否保存。
+- `actor.edit` 的 `delete`：`confirm: true` 只在经 MCP Server 时被强制（缺省走 elicitation 或 `--allow-destructive`）；**直连 bridge 端口不会校验 confirm**。安全门在 Server 层，别把 bridge 端口直接暴露给自定义客户端。
+
+### License
+
+[MIT](LICENSE) © 2026 UEMCP contributors。MIT 仅覆盖本项目代码，不覆盖 Unreal Engine 及用户资产；使用本项目需自行拥有合法的 UE 引擎授权。
+
+### 贡献与反馈
+
+<!-- TODO: 补充 CONTRIBUTING.md、Issue/PR 指引、行为准则链接 -->
+- Bug 反馈与功能建议：请开 Issue（附 UE 版本、客户端、`/health` 输出与错误码）。
+- 安全问题：请勿公开披露，通过私有渠道联系维护者（占位：待补 SECURITY.md）。
+
+## English
+
+UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unreal Engine 5.4/5.7 editor. Point Claude Code, Cursor, or any HTTP client at it and drive **the editor that is currently open** over the standard MCP protocol: query and edit actors, manage levels, search assets, tune material-instance parameters, capture the viewport, and inspect or compile Blueprints.
+
+- **Client-agnostic**: MCP is the only boundary. No chat UI is embedded (Streamable HTTP, legacy SSE, and stdio transports).
+- **Editor-only**: acts on the editor process; does not parse offline `.uasset` files and does not drive packaged runtime games.
+- **Local-first**: binds to `127.0.0.1` only by default; works out of the box, no deployment.
+- **No C++ on the UE side**: a pure Python plugin with no C++ toolchain; the UE side depends on the Python standard library only.
+
+> Engine: UE **5.4 / 5.7** (tested on 5.4.4 / 5.7.4). Status: MVP (v0.1.2); APIs may change between iterations.
+
+---
+
+### Features (15 tools)
+
+| Tool | What it does | Visible by default |
+|---|---|---|
+| `ue_editor_status` | Editor, current level, selected actors, viewport camera, capabilities and policy overview | Yes |
+| `ue_actor_query` | Query actors by class, name, label or folder; paginated results | Yes |
+| `ue_actor_edit` | Batch spawn, delete, transform, duplicate or select actors; edit a controlled set of properties (transaction + rollback + dryRun) | standard and above |
+| `ue_level_control` | Inspect the current level and dirty packages; open, save or create levels | Yes (write actions: standard and above) |
+| `ue_asset_search` | Search assets by path, name or class; query dependencies and referencers | Yes |
+| `ue_material_params` | Read material and material-instance parameters; set instance parameters; create instances | Yes (write actions: standard and above) |
+| `ue_viewport_capture` | Capture the level viewport or the PIE frame (PNG/JPEG); `activateWindow` (**default false** — no activation unless requested) restores and verifies the foreground window and fails **fast** with `EDITOR_UNSAFE_STATE` instead of waiting for the timeout; the result carries an **absolute path** + `sha256` + `stats` (self-detect blank frames) | Yes |
+| `ue_blueprint` | Inspect Blueprint structure (parent class, generated class, type, named graphs); trigger a compile (variables and node counts are engine-limited, see known limitations) | Yes |
+| `ue_pie_control` | Control Play-In-Editor: `start` / `stop` / `restart` / `status`, optional `simulate`; **no longer needs `--allow-exec`** (write actions use `allowWrite`) | Yes (read-only: `status` only) |
+| `ue_policy_explain` | List every tool's visibility under the current policy and why (`server.policy` / `--allow-console` / `--allow-exec`) | Yes |
+| `ue_reflect` | Reflect the **callable functions** exposed by any object or level actor (names, parameter counts) — replaces "grep the source to find out which commands exist" | Yes |
+| `ue_call_function` | **Call any `BlueprintCallable` function by name** with JSON arguments; non-void functions return their return value, `void` functions return `returnedVoid:true` and accept `captureLog:true` to also receive the in-call log window (`logLines`). Generic: requires no change to your own framework | standard and above (needs bridge `allowWrite`) |
+| `ue_log_query` | Search the editor log by regex / level / time window and return matched lines with line numbers; restricted to this project's `Saved/Logs/`. Level rule: explicit `: Error:` / `: Warning:` segments win, implicit `LogXxx:` lines count as `Log`, otherwise `level=null` (excluded from `levels` filtering; reported via `unclassified`) | Yes |
+| `ue_console_command` | Run console commands (allowlist-restricted) | **Hidden** |
+| `ue_python_exec` | Run Python on the editor game thread (no sandbox) | **Hidden** |
+
+**Explicitly not supported**: actor edits while PIE is running; Blueprint node creation, wiring and animation Blueprint editing (needs a P2 C++ module); material graph editing; asset import, export or move; console output capture; editor UI/Slate automation; Sequencer/Niagara; remote multi-user service.
+
+---
+
+### Architecture
+
+```text
+┌──────────────────────────┐
+│ MCP client (any)         │  Claude Code / Cursor / curl / your own
+└────────────┬─────────────┘
+             │ MCP: stdio, Streamable HTTP (:18777/mcp), or legacy SSE (:18777/sse)
+             ▼
+┌──────────────────────────────────────────────┐
+│ UEMCP Server (Node.js/TypeScript, :18777)    │
+│ sessions / policy / discovery / audit / rate limit │
+└────────────┬─────────────────────────────────┘
+             │ HTTP JSON-RPC 2.0 + X-UEMCP-Token
+             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ UEMCPBridge (inside the UE 5.4/5.7 editor, pure Python, :18778) │
+│ ThreadingHTTPServer + single game-thread queue                  │
+└────────────┬────────────────────────────────────────────────────┘
+             │ unreal.* Python API (game thread only)
+             ▼
+        UE 5.4/5.7 editor (World / Actor / AssetRegistry / Viewport)
+```
+
+- After startup the bridge writes discovery files under `~/.uemcp/`; the server discovers and validates them (pid + health double check; stale files are skipped).
+- Every `unreal.*` call runs on the game-thread queue; HTTP threads never call the engine.
+- Default ports: server `18777` (if taken it **exits**, so pick another port explicitly); bridge `18778` (if taken it falls back to 18779–18788).
+
+---
+
+### Requirements
+
+- Unreal Engine **5.4.x** + PythonScriptPlugin + EditorScriptingUtilities (bundled with the engine; tested on 5.4.4)
+- Unreal Engine **5.7.x** + the same three plugins (bundled with the engine; tested on 5.7.4)
+- Node.js **>= 20**, pnpm 11 (or corepack)
+- No Python packaging on the UE side (standard library only); no C++ build
+
+### Download
+
+Current release: **v0.1.5**, four assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
+
+- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.4.zip>
+- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.7.zip>
+- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/SHA256SUMS.txt>
+
+Install in three steps:
+
+1. Unzip into `<YourProject>/Plugins/` so that you get `Plugins/UEMCPBridge/`.
+2. Enable `UEMCPBridge`, `PythonScriptPlugin` and `EditorScriptingUtilities` (see the `.uproject` snippet below).
+3. Start the editor, then run `curl http://127.0.0.1:18778/health`; a response containing `"app":"uemcp-bridge"` means the bridge is up.
+
+> Prefer source? Copy the repository's `UEMCPBridge/` directory into `Plugins/` instead.
+
+> The plugin is pure Python: there is no build step after download — unzip it into `Plugins/` and the editor loads it directly.
+
+### Install (UE plugin)
+
+1. Copy `UEMCPBridge/` to `<Project>/Plugins/UEMCPBridge/`.
+2. Enable the three plugins in `<Project>.uproject`:
+
+```json
+"Plugins": [
+  { "Name": "UEMCPBridge", "Enabled": true },
+  { "Name": "PythonScriptPlugin", "Enabled": true },
+  { "Name": "EditorScriptingUtilities", "Enabled": true }
+]
+```
+
+3. Start the editor (the bridge starts automatically) and verify:
+
+```bash
+curl -s http://127.0.0.1:18778/health
+# expect "app": "uemcp-bridge" plus ueVersion / port / pid / capabilities
+```
+
+### Using it on a real project
+
+Before pointing it at a production project, work through this list in order:
+
+1. **Back up first, or make sure version control is clean.** The plugin never saves on its own, but editor changes are written to the project by later saves. Do not start without a backup.
+2. **Start read-only.** The default policy is `read-only` (7 read-only tools). Check that `editor.status` / `actor.query` / `asset.search` return what you expect; on large projects watch `asset.search` latency and `SEARCH_TIMEOUT` (20 s by default, raise `searchTimeoutMs` if needed).
+3. **Rehearse writes with `dryRun`.** `actor.edit` accepts `dryRun: true`; review the planned changes before running for real. Writes run inside an editor transaction, so **`Ctrl+Z` undoes them**.
+4. **Turn `allowWrite` on only when needed, and off right after.** Enable both sides: server `--policy standard` and bridge `"allowWrite": true`. The bridge reads its settings at startup, so **set it back to `false` and restart the editor** when you are done.
+5. **Keep the editor window in the foreground for captures.** Without focus, UE throttles ticks to about 3 fps and `viewport.capture` may return `CAPTURE_TIMEOUT`; keep the window visible, raise `timeoutMs`, or retry.
+6. **Do not enable `allowExec` / `allowConsole` in production** unless you accept handing over control of the editor: there is no sandbox, and a running snippet cannot be interrupted.
+7. **Leave headroom for concurrent sessions.** The server allows 20 req/s per session and the bridge 30 req/s globally; concurrent users or batch calls may receive `RATE_LIMITED` (HTTP 429) — back off and retry.
+
+### Build and run (server side)
+
+#### Install the server (offline tgz, no clone needed)
+
+Requires Node.js ≥ 20. This package is **not published to the npm registry** — `npm view @uemcp/server` returning 404 is expected; download it from the Release assets only.
+
+1. Download [`uemcp-server-0.1.5.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/uemcp-server-0.1.5.tgz) from the latest Release (709,310 B; SHA256 `b8f14de98496d0c8f7b15ff35e4e30200f1226df827c043ce9d0a95ad9da6c29`, full value on the third line of `SHA256SUMS.txt`).
+2. Install it globally (purely local, no registry access):
+
+```bash
+npm install -g ./uemcp-server-0.1.5.tgz
+```
+
+3. Start it and check the health endpoint:
+
+```bash
+uemcp --transport http --policy read-only
+curl -s http://127.0.0.1:18777/health   # expect {"ok":true,...}
+```
+
+> This artifact is a **full esbuild bundle** with no external dependencies — not the output of `pnpm pack`, whose `workspace:*` dependencies make it fail to install (404). Do not point users at the pnpm-pack artifact.
+
+#### Build from source (for development)
+
+```bash
+cd uemcp
+pnpm install
+pnpm build          # output: packages/server/dist/index.js
+pnpm typecheck      # optional: type check
+```
+
+```bash
+# foreground HTTP server (127.0.0.1:18777 by default, policy read-only by default)
+node packages/server/dist/index.js --transport http --policy standard
+
+# stdio mode (stdout carries MCP frames only; logs go to stderr)
+node packages/server/dist/index.js --transport stdio
+```
+
+On Windows, run the server as a detached process so it survives terminal sessions:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1 -Port 18777 -Policy standard
+powershell -ExecutionPolicy Bypass -File scripts\stop-server.ps1
+```
+
+Common flags: `--port N`, `--policy read-only|standard|full`, `--project <dir>` (recommended when several projects are open), `--bridge-url`, `--auth-token`, `--allow-destructive`, `--allow-console`, `--allow-exec`, `--disable-legacy-sse`. See [uemcp/README-DEV.md](uemcp/README-DEV.md) for the full flag and environment-variable list.
+
+### Connecting MCP clients
+
+**Claude Code (HTTP, recommended)**:
+
+```bash
+claude mcp add --transport http uemcp http://127.0.0.1:18777/mcp
+claude mcp list        # expected: uemcp ✓ Connected
+```
+
+**Claude Code / CLI (stdio config)**:
+
+```json
+{
+  "mcpServers": {
+    "uemcp": {
+      "command": "node",
+      "args": ["<repo>/uemcp/packages/server/dist/index.js", "--transport", "stdio", "--policy", "standard"]
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`; pick one depending on the client version):
+
+Cursor 0.45.x (legacy SSE baseline, decision D2):
+
+```json
+{ "mcpServers": { "uemcp": { "url": "http://127.0.0.1:18777/sse" } } }
+```
+
+Cursor 0.46+:
+
+```json
+{ "mcpServers": { "uemcp": { "url": "http://127.0.0.1:18777/mcp" } } }
+```
+
+> Note: `/mcp` (Streamable HTTP) on 0.46+ is **not tested yet**; fall back to the legacy `/sse` endpoint when you need a verified path (tested with 0.45.x, architecture §3.4).
+
+**Any HTTP client (curl)**:
+
+```bash
+curl -s -D - -X POST http://127.0.0.1:18777/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
+# take Mcp-Session-Id from the response headers and send it on tools/list and tools/call
+# the full four-step sequence is in HANDOFF.md §5.4
+```
+
+### Security defaults and enabling writes
+
+Everything is read-only, loopback-only, and gated on both sides (server policy × bridge config) by default. Audit logs exclude tokens and Python source; Host/Origin checks and token-bucket rate limiting are on; the bridge token rotates on every editor start. See [UEMCPBridge/README.md](UEMCPBridge/README.md) and architecture §6 for details.
+
+Enable writes in this order (both sides must agree):
+
+1. **Writes**: start the server with `--policy standard`; set `"allowWrite": true` in `<Project>/Saved/UEMCP/bridge-settings.json` (or `UEMCP_BRIDGE_ALLOW_WRITE`) and restart the editor.
+2. **Console / Python** (hidden by default, at your own risk): server `--policy full --allow-console` / `--allow-exec`; bridge `allowConsole` / `allowExec`. Each call still requires confirmation (elicitation-capable clients prompt; otherwise the switch itself is policy-level confirmation and is audited).
+
+#### Traceability and session behaviour (v0.1.4)
+
+- `/health` also returns `buildHash` (sha256 over every plugin Python file), `buildTime`, `sourcePath` (the plugin directory actually loaded) and `instanceId` — use them after an upgrade to tell whether the new build is loaded and whether a backup directory shadowed it.
+- Sessions have an idle **TTL (30 min by default)** and a **cap (32 by default, lower it with `--max-sessions` / `UEMCP_MAX_SESSIONS`)**. When the pool is full the oldest **idle** session is evicted (sessions holding a live SSE stream are never evicted); only when every session holds a live stream does the server answer 429 (with `retryAfterMs`).
+- `initialize` responses carry `Mcp-Session-Expires-In-Ms`; an expired session returns `404 -32001` with `data.hint="reinitialize"`, so a well-behaved client heals itself by re-initializing.
+- **Audit log contract (clarified in the 0.1.5 second batch)**: `~/.uemcp/audit/YYYY-MM-DD.jsonl` rotates daily with a **fixed 30-day retention (`RETENTION_DAYS` constant, not configurable)**; expired files are purged at startup. **Every tool call is audited** — read-only tools included. Failures carry `errorCode` plus the bridge's `origin`/`stage`; every record snapshots the effective policy (`policySnapshot`: server mode/source/switches + bridge policies/rate limit), the discovery `schemaVersion` and, while a bridge is connected, its build identity (`instanceId`/`buildHash`/`buildTime`/`sourcePath`). Audit write failures never block tool calls; after 3 consecutive failures the server warns on stderr and flags `auditDegraded=true` in `/health`. The stdio transport is a single session, so its records carry no `sessionId` (HTTP only). Tokens, Python source and screenshot base64 are never logged.
+
+> ⚠️ **Inherent risk of a local developer tool**: enabling `ue_python_exec` hands control of the editor process to the caller (no sandbox, no way to interrupt a running snippet). Any local process can read `~/.uemcp/bridge.json` and obtain the bridge token. This is the inherent boundary of a local development tool: use it in trusted environments only, and never enable exec for screen recordings, demos or CI.
+
+### Testing
+
+```bash
+cd uemcp
+pnpm smoke        # server self-test: SMOKE RESULT: 87/87 passed
+pnpm test         # node --test: unit + black-box, 82 cases
+pnpm typecheck && pnpm build
+```
+
+UE-side self-checks (20 scripts that need no engine, plus 4 that require one) are documented in [UEMCPBridge/README.md](UEMCPBridge/README.md) §7. Test ports: 18999 and 19001–19008 for smoke, 19101–19199 for unit tests, so the real 18777/18778 ports are never touched.
+
+### Repository layout
+
+```text
+├─ UEMCPBridge/        # UE 5.4/5.7 pure-Python plugin (bridge + self-tests)
+├─ uemcp/              # MCP server (pnpm workspace: packages/shared + packages/server)
+│  ├─ packages/shared/ # tool names, zod schemas, error codes (@uemcp/shared)
+│  ├─ packages/server/ # CLI, transports, discovery, policy, audit, 15 tools (@uemcp/server)
+│  ├─ scripts/         # smoke.mjs, mock-bridge.mjs, start/stop-server.ps1
+│  └─ tests/           # node --test unit and black-box tests
+├─ docs/               # architecture v0.2.0, decisions, test plan and report, code review
+├─ LICENSE             # MIT
+└─ HANDOFF.md          # maintainer guide (quick start and release checklist)
+```
+
+### Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/UEMCP-架构设计.md](docs/UEMCP-架构设计.md) | Architecture baseline v0.2.0: ports, discovery, error model, schemas for the 10 MVP tools, security model (the server now ships 15 tools — see `shared/src/toolNames.ts` for the five added since) |
+| [docs/UEMCP-路线图.md](docs/UEMCP-路线图.md) | Roadmap: done / in progress / planned / explicitly out of scope (each with a reason and an alternative) |
+| [docs/UEMCP-架构裁决补充.md](docs/UEMCP-架构裁决补充.md) | Seven key decisions (error-code table, confirmation flow, port policy, …) |
+| [uemcp/README-DEV.md](uemcp/README-DEV.md) | Developer guide: build, run, deploy, self-tests, implementation contracts, known limitations |
+| [UEMCPBridge/README.md](UEMCPBridge/README.md) | UE side: install, configuration, security, RPC method table, self-tests |
+| [docs/UEMCP-测试执行报告.md](docs/UEMCP-测试执行报告.md) | Test results and coverage |
+| [docs/UEMCP-代码审查报告.md](docs/UEMCP-代码审查报告.md) | Two rounds of code review |
+| [HANDOFF.md](HANDOFF.md) | Maintainer guide (status, known limitations, release checklist, TODO) |
+
+### Common pitfalls (must-read before upgrading)
+
+Three pitfalls that cost our business team real debugging time during a two-day trial (mirrors [UEMCPBridge/README.md](UEMCPBridge/README.md) §13):
+
+1. **`Plugins/` directory scanning: upgrade backups can shadow the new build.** The engine scans every directory under `Plugins/` that contains a `.uplugin` descriptor. If you back up by copying `UEMCPBridge` to `Plugins/UEMCPBridge.bak`, the backup's old descriptor is still scanned — and when the log says `second location will be ignored`, the editor may actually be **running the old code**. When backing up, rename the descriptor too (e.g. `UEMCPBridge.uplugin.bak`), or move the backup out of `Plugins/`.
+2. **Version identification: `pluginVersion` alone is not enough.** Two different builds once shipped with the same version number. After upgrading, verify `buildHash` and `sourcePath` in `GET /health` (**both new in this release**): the fields must be present and differ from before the upgrade; if `/health` lacks these fields, the engine is still loading an old package (cross-check pitfall 1 for stray copies under `Plugins/`).
+3. **Two Python bindings that lead to wrong conclusions:**
+   - `unreal.GameplayStatics.project_world_to_screen` returns a **`Vector2D`**, not a `(bool, Vector2D)` tuple — checks written against a leading boolean silently reach wrong conclusions.
+   - The usable member names of `TraceTypeQuery` differ from intuition: do not copy C++ trace-channel names; print the actual members of `unreal.TraceTypeQuery` in Python first.
+
+### Known limitations
+
+- Blueprint: node creation, wiring, deletion and animation Blueprint editing are **not supported** (`CAPABILITY_UNAVAILABLE`; needs a P2 C++ module). `blueprint.query` now reads **parent class / generated class / Blueprint type / `EventGraph` / `UserConstructionScript` / `AnimGraph`**; **variable lists and per-graph node counts remain unreadable** (`UBlueprint.NewVariables` and `EdGraph.Nodes` are protected engine properties and need a C++ module). The response says so via `variablesUnavailable` instead of returning a fake empty array.
+- Actor edits inside PIE are **not supported**: write operations return `EDITOR_UNSAFE_STATE`; read-only queries still work.
+- The plugin acts on the editor process only: it does not parse offline `.uasset` files and does not operate on packaged runtimes.
+- When the editor window is minimized or unfocused, UE throttles ticks (about 3.1 fps in our test), so `viewport.capture` may return `CAPTURE_TIMEOUT` (HTTP 504 / `-32037` / `retryable=true`). With `activateWindow: true` the bridge restores the window and **verifies the foreground window**: if it is still minimized or could not be brought forward, the call fails **immediately** with `EDITOR_UNSAFE_STATE` (`reason=window_not_foreground`) instead of waiting for the timeout. Keep the window in the foreground, or pass `activateWindow: false` and guarantee it yourself.
+- `level.control` `list_dirty`: after `actor.edit` spawns and deletes actors, the level package still reports dirty (UE marks a package dirty on in-memory add/remove and deleting does not undo it), while the `.umap` on disk is unchanged (three umaps kept identical SHA-256 before and after in our test). Dirty does not mean the file changed — whether to save is your decision.
+- `actor.edit` `delete`: `confirm: true` is enforced only when the call goes through the MCP server (otherwise elicitation or `--allow-destructive` applies). A client that talks to the **bridge port directly is never asked to confirm** — the safety gate lives in the server, so do not expose the bridge port to custom clients.
+
+### License
+
+[MIT](LICENSE) © 2026 UEMCP contributors. MIT covers this project's code only; it does not cover Unreal Engine or user assets. You must hold a valid Unreal Engine license to use this project.
+
+### Contributing
+
+<!-- TODO: add CONTRIBUTING.md, issue/PR guidelines and a code-of-conduct link -->
+- Bugs and feature requests: open an issue (include your UE version, MCP client, `/health` output and error code).
+- Security: do not disclose publicly; contact the maintainers privately (placeholder: SECURITY.md pending).

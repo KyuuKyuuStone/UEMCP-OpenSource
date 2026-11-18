@@ -8,13 +8,15 @@
  *   reason 为中英双语各一句；allowedActions 仅为 read-only 收窄的混合工具输出
  *   （narrowedActions()，含 ue_pie_control 的 ["status"]）；
  * - bridge 状态取自 watchdog 缓存的 /health（不可达时 connected=false 并在 note 说明）。
- *   注：watchdog/health 缓存中没有 bridge 侧 policies 字段，故如实返回 watchdog
- *   实际维护的连接信息，不编造字段。
+ *   注：B-3.1 起 watchdog 保留 /health 的桥接侧 policies/rateLimit 等（供审计
+ *   policySnapshot 使用）；本工具 bridge 段仍只输出连接信息，不编造字段。
  */
 import { z } from "zod";
 import { TOOL_NAMES } from "@uemcp/shared";
+import { summarizeArgs } from "../audit.js";
 import { isToolVisible, narrowedActions, toolDisabledGate } from "../policy.js";
 import {
+  auditCall,
   makeMeta,
   okResult,
   summarizeOut,
@@ -89,6 +91,17 @@ export const policyExplainTool: ToolDef = {
       bridge,
     };
     const meta = makeMeta(ctx, started);
+    // B-3.7：纯信息工具同样统一纳入审计（不发 RPC；rpcMethod 为目录占位 policy.explain）
+    await auditCall(ctx, {
+      tool: policyExplainTool.name,
+      rpcMethod: policyExplainTool.rpcMethod,
+      requestId: meta.requestId,
+      durationMs: meta.durationMs,
+      ok: true,
+      errorCode: null,
+      decision: "allowed",
+      argsSummary: summarizeArgs(policyExplainTool.name, {}),
+    });
     return okResult(
       policyExplainTool.name,
       summarizeOut(policyExplainTool.name, data as Record<string, unknown>, []),

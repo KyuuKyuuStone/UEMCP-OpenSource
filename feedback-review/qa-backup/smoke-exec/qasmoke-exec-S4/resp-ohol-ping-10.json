@@ -1,0 +1,34 @@
+{
+  "ts": "2026-11-18T07:04:34.331Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1385,
+    "method": "bridge.ping",
+    "params": {}
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1385,
+    "result": {
+      "ok": true,
+      "data": {
+        "pong": true,
+        "pid": 26484,
+        "port": 18778
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 1385,
+        "durationMs": 0,
+        "queuedMs": null,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 11
+}

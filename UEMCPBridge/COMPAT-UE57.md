@@ -110,12 +110,57 @@ Engine\Plugins\Experimental\PythonScriptPlugin\Source\PythonScriptPlugin\Private
 | 调用点 | 5.4.4 | 5.7.4 | 依据 | 结论 |
 | --- | --- | --- | --- | --- |
 | `unreal.AssetRegistryHelpers.get_asset_registry` `:25`（`status.py:87` 同） | 存在 | 存在，未变 | E1 `AssetRegistryHelpers.h` | 不改 |
-| `unreal.AssetRegistryDependencyOptions` + 6 个 `include_*` 属性 `:93` | 存在 | 存在，字段集合相同 | E1 `IAssetRegistry.h` 结构体定义 | 不改（缺字段时已降级为 warning） |
+| `unreal.AssetRegistryDependencyOptions` `:93` | 存在，5 个 `include_*` 属性 | 存在，7 个（新增 game/editor-only 两项，见 §4.3.1） | E1 `IAssetRegistry.h` 结构体定义；2026-11-13 复核修正：两版字段集合并不相同 | 不改（插件使用的 5 个两版都存在；缺字段时已降级为 warning） |
 | `registry.get_assets_by_path(Name(path), recursive)` `:259` | 存在 | 存在，签名未变 | E1 `IAssetRegistry.h`；5.6 起仅 `GetAssetByObjectPath(FName)` 被标记弃用，本插件未用 | 不改 |
 | `registry.get_dependencies / get_referencers` `:138,147` | 存在 | 存在，`K2_GetDependencies/K2_GetReferencers` 的 `ScriptName` 映射与参数未变 | E1 | 不改 |
 | `registry.is_loading_assets / wait_for_completion / search_all_assets` `:59,63,31` | 存在 | 存在，未变 | E1 | 不改 |
 | `unreal.AssetRegistryHelpers.is_redirector` `:285`（`handlers/__init__.py:694` 同） | 存在 | 存在，未变 | E1 | 不改 |
 | `unreal.Name` `:259` | 存在 | 存在 | E2 | 不改 |
+
+### 4.3.1 资产依赖查询引擎差异矩阵（dependencyFlags）
+
+> 来源：外部审查 IMP-003（2026-11-13 采纳）——`asset.search` 的依赖选项对管理引用使用旧式单旗标回退（`handlers/assets.py:108-112`），各引擎旗标支持差异应予说明。证据沿用 E1 头文件对照（字段逐条摘自两版 `IAssetRegistry.h` 的 `FAssetRegistryDependencyOptions` 结构体，引擎版本经 `Build.version` 复核为 5.4.4 / 5.7.4）+ §8 `test_dependency_options.py`。
+
+MCP 侧 `dependencyFlags` 共 4 个键（白名单 `assets.py:243`），与引擎属性的映射及两版支持情况：
+
+| dependencyFlags 键 | 缺省 | 写入的引擎属性 | 5.4.4 | 5.7.4 | 行为 |
+| --- | --- | --- | --- | --- | --- |
+| `hard` | `true` | `include_hard_package_references` | 存在 | 存在 | 两版直写 |
+| `soft` | `true` | `include_soft_package_references` | 存在 | 存在 | 两版直写 |
+| `management` | `false` | `include_hard_management_references` + `include_soft_management_references` | 存在 | 存在 | 一个旗标同时写两个引擎属性（硬/软管理引用绑定同一开关） |
+| `searchableName` | `false` | `include_searchable_names` | 存在 | 存在 | 两版直写 |
+
+引擎结构体完整字段集（两版差异，E1）：
+
+| 引擎属性（Python 名） | 5.4.4 | 5.7.4 | 结构体缺省 | 插件是否设置 |
+| --- | --- | --- | --- | --- |
+| `include_soft_package_references` | 有 | 有 | `true` | 是（`soft`） |
+| `include_hard_package_references` | 有 | 有 | `true` | 是（`hard`） |
+| `include_searchable_names` | 有 | 有 | `false` | 是（`searchableName`） |
+| `include_soft_management_references` | 有 | 有 | `false` | 是（`management`） |
+| `include_hard_management_references` | 有 | 有 | `false` | 是（`management`） |
+| `include_game_package_references` | **无** | 有 | `true` | 否（保持引擎缺省） |
+| `include_editor_only_package_references` | **无** | 有 | `true` | 否（保持引擎缺省） |
+| `include_management_references`（旧式单旗标） | 无 | 无 | — | 仅回退分支（见下） |
+
+管理引用的旧式单旗标回退（`assets.py:108-112`）：
+
+- 触发条件：`management=true` 且引擎上 `include_hard_management_references` 与 `include_soft_management_references` **都不存在**——5.4/5.7 之外的更旧引擎才可能触发；
+- 回退动作：改设单旗标 `include_management_references=true`；
+- 在 5.4.4 / 5.7.4：两版结构体均**无**该单旗标（E1 核对），随包引擎上回退分支永不触发；DEFECT-6 修复后也不会无条件设置它（避免误开管理引用）。
+
+缺字段/失败时的降级契约（两版一致，`assets.py:70-116`）：
+
+- 属性不存在 → 警告 `DEPENDENCY_OPTION_UNAVAILABLE: <属性名>`，跳过该字段，不报错；
+- `set_editor_property` 抛异常 → 警告 `DEPENDENCY_OPTION_FAILED: <属性名> (<异常类名>)`；
+- `get_dependencies` / `get_referencers` 查询异常 → 空列表 + `DEPENDENCY_QUERY_FAILED` / `REFERENCER_QUERY_FAILED` 警告，不抛 RPC 异常；
+- 以上由 `Tests/test_dependency_options.py` 无编辑器自检覆盖（UE 5.4 形状、旧式单旗标形状、缺属性跳过、查询降级四类断言）。
+
+语义提示：
+
+- `management=false`（缺省）时管理引用不计入依赖/引用者结果；置 `true` 后两个管理引用属性同时开启；
+- 同一组选项同时作用于 `get_dependencies` 与 `get_referencers`（`assets.py:138,147`），BFS 扩展深度 1–3；
+- 5.7 新增的 `include_game_package_references` / `include_editor_only_package_references` 插件**不设置**，保持结构体缺省 `true`，即不按 game/editor-only 过滤，与 5.4 的全量语义等价（头文件缺省值核对；运行时行为归 §5 真机项一并观察）。
 
 ### 4.4 materials.py（`material.params`）
 

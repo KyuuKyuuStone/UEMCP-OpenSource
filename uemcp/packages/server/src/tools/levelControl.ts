@@ -91,6 +91,7 @@ export const levelControlTool: ToolDef = {
         decision: "allowed",
         ...(confirmationMode !== "none" ? { confirmationMode, confirmationSwitch } : {}),
         argsSummary: summarizeArgs(levelControlTool.name, rawArgs),
+        errorDetails: res.error?.details, // B-3.7：仅提取 origin/stage 摘要
       });
     }
     if (!res.ok) {

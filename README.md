@@ -88,11 +88,11 @@ UEMCP 是**客户端无关**的 Unreal Engine 5.4/5.7 编辑器 MCP（Model Cont
 
 ### 下载
 
-当前版本 **v0.1.5**，四个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
+当前版本 **v0.1.6**，四个附件（[全部版本](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)）：
 
-- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.4.zip>
-- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.7.zip>
-- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/SHA256SUMS.txt>
+- UE 5.4 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.6/UEMCPBridge-5.4.zip>
+- UE 5.7 插件包：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.6/UEMCPBridge-5.7.zip>
+- 校验和：<https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.6/SHA256SUMS.txt>
 
 安装三步：
 
@@ -142,11 +142,11 @@ curl -s http://127.0.0.1:18778/health
 
 前置：Node.js ≥ 20。该包**未发布到 npm registry**（`npm view @uemcp/server` 返回 404 属预期），只能从 Release 附件下载。
 
-1. 从最新 Release 下载 [`uemcp-server-0.1.5.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/uemcp-server-0.1.5.tgz)（709,310 B；SHA256 `b8f14de98496d0c8f7b15ff35e4e30200f1226df827c043ce9d0a95ad9da6c29`，完整值见 `SHA256SUMS.txt` 第三行）。
+1. 从最新 Release 下载 [`uemcp-server-0.1.6.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.6/uemcp-server-0.1.6.tgz)（字节数与 SHA256 以同一 Release 的附件 `SHA256SUMS.txt` 为准，本文不写死——本 README 会打进该 tgz，写死其哈希即构成自我引用）。
 2. 全局安装（纯本地，不访问 registry）：
 
 ```bash
-npm install -g ./uemcp-server-0.1.5.tgz
+npm install -g ./uemcp-server-0.1.6.tgz
 ```
 
 3. 启动并自检：
@@ -247,6 +247,7 @@ curl -s -D - -X POST http://127.0.0.1:18777/mcp \
 - `/health` 额外返回 `buildHash`（插件 Python 全量 sha256）、`buildTime`、`sourcePath`（实际加载的插件目录）、`instanceId`——升级后用它判断「装的是不是新版」「是不是加载了备份目录那份」。
 - 会话有空闲 **TTL（默认 30 分钟）**与**会话数上限（默认 32，可用 `--max-sessions` / `UEMCP_MAX_SESSIONS` 调小）**；满仓时逐出最老的**空闲**会话（正在推流的 SSE 会话不动），只有全部会话都在推流才返回 429（带 `retryAfterMs`）。
 - `initialize` 响应带 `Mcp-Session-Expires-In-Ms`；会话失效返回 `404 -32001` 且 `data.hint="reinitialize"`，客户端据此重建会话即可自愈。
+- **审计日志契约（0.1.5 第二批明确）**：`~/.uemcp/audit/YYYY-MM-DD.jsonl` 按天轮转、**固定保留 30 天（`RETENTION_DAYS` 常量，不可配置）**、启动时清理过期文件；**全部工具调用均记录**（含只读工具），失败记录带 `errorCode` 与桥接 `origin`/`stage`，每条附 `policySnapshot`（Server mode/source/开关 + 桥接 policies/rateLimit）、`schemaVersion` 与桥接连接期间的构建身份（`instanceId`/`buildHash`/`buildTime`/`sourcePath`）；审计写失败**从不阻塞**工具调用，连续 3 次失败即在 stderr 告警并在 `/health` 标 `auditDegraded=true`；stdio 为单会话，记录不含 `sessionId`（仅 HTTP 传输有）。永不记录 token、Python 源码、截图 base64。
 
 > ⚠️ **本机开发工具的固有风险**：开启 `ue_python_exec` 等于把编辑器进程控制权交给调用方（无沙箱、执行不可中断）；本机恶意程序读取 `~/.uemcp/bridge.json` 可取得桥接 token。这是本地开发工具的固有边界，请在可信环境使用；不要在录屏、演示、CI 中开启 exec。
 
@@ -254,12 +255,12 @@ curl -s -D - -X POST http://127.0.0.1:18777/mcp \
 
 ```bash
 cd uemcp
-pnpm smoke        # Server 自测：SMOKE RESULT: 84/84 passed
-pnpm test         # node --test：单测 + 黑盒 59 项
+pnpm smoke        # Server 自测：SMOKE RESULT: 87/87 passed
+pnpm test         # node --test：单测 + 黑盒 82 项
 pnpm typecheck && pnpm build
 ```
 
-UE 侧自检（无需引擎的 14 个脚本 + 需 UnrealEditor-Cmd 的冒烟）见 [UEMCPBridge/README.md](UEMCPBridge/README.md) §7。测试端口约定：smoke 用 18999/19001–19008、单测用 19101–19199，避开真实服务端口 18777/18778。
+UE 侧自检（无需引擎的 20 个脚本 + 需引擎的 4 个）见 [UEMCPBridge/README.md](UEMCPBridge/README.md) §7。测试端口约定：smoke 用 18999/19001–19008、单测用 19101–19199，避开真实服务端口 18777/18778。
 
 ### 目录结构
 
@@ -267,7 +268,7 @@ UE 侧自检（无需引擎的 14 个脚本 + 需 UnrealEditor-Cmd 的冒烟）�
 ├─ UEMCPBridge/        # UE 5.4/5.7 纯 Python 插件（桥接 + 自测脚本）
 ├─ uemcp/              # MCP Server（pnpm workspace：packages/shared + packages/server）
 │  ├─ packages/shared/ # 工具名、zod Schema、错误码（@uemcp/shared）
-│  ├─ packages/server/ # CLI、传输、发现、策略、审计、10 工具（@uemcp/server）
+│  ├─ packages/server/ # CLI、传输、发现、策略、审计、15 工具（@uemcp/server）
 │  ├─ scripts/         # smoke.mjs、mock-bridge.mjs、start/stop-server.ps1
 │  └─ tests/           # node --test 单测与黑盒
 ├─ docs/               # 架构设计 v0.2.0、裁决记录、测试计划与报告、代码审查报告
@@ -279,7 +280,7 @@ UE 侧自检（无需引擎的 14 个脚本 + 需 UnrealEditor-Cmd 的冒烟）�
 
 | 文档 | 内容 |
 |---|---|
-| [docs/UEMCP-架构设计.md](docs/UEMCP-架构设计.md) | 架构基线 v0.2.0：端口/发现/错误模型/10 工具 Schema/安全模型 |
+| [docs/UEMCP-架构设计.md](docs/UEMCP-架构设计.md) | 架构基线 v0.2.0：端口/发现/错误模型/安全模型 + MVP 10 工具 Schema（现共 15 工具，0.1.1–0.1.5 新增 5 个以 `uemcp/packages/shared/src/toolNames.ts` 为准） |
 | [docs/UEMCP-路线图.md](docs/UEMCP-路线图.md) | 路线图：已做 / 在做 / 计划 / 明确不做（每条含原因与替代方案） |
 | [docs/UEMCP-架构裁决补充.md](docs/UEMCP-架构裁决补充.md) | 7 项关键决策记录（错误码表/确认流/端口策略等） |
 | [uemcp/README-DEV.md](uemcp/README-DEV.md) | 开发者文档：构建/运行/部署/自测/实现契约/已知限制 |
@@ -392,11 +393,11 @@ UEMCP is a **client-agnostic** MCP (Model Context Protocol) service for the Unre
 
 ### Download
 
-Current release: **v0.1.5**, four assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
+Current release: **v0.1.6**, four assets ([all releases](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases)):
 
-- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.4.zip>
-- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/UEMCPBridge-5.7.zip>
-- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/SHA256SUMS.txt>
+- UE 5.4 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.6/UEMCPBridge-5.4.zip>
+- UE 5.7 plugin: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.6/UEMCPBridge-5.7.zip>
+- Checksums: <https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.6/SHA256SUMS.txt>
 
 Install in three steps:
 
@@ -446,11 +447,11 @@ Before pointing it at a production project, work through this list in order:
 
 Requires Node.js ≥ 20. This package is **not published to the npm registry** — `npm view @uemcp/server` returning 404 is expected; download it from the Release assets only.
 
-1. Download [`uemcp-server-0.1.5.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.5/uemcp-server-0.1.5.tgz) from the latest Release (709,310 B; SHA256 `b8f14de98496d0c8f7b15ff35e4e30200f1226df827c043ce9d0a95ad9da6c29`, full value on the third line of `SHA256SUMS.txt`).
+1. Download [`uemcp-server-0.1.6.tgz`](https://github.com/KyuuKyuuStone/UEMCP-OpenSource/releases/download/v0.1.6/uemcp-server-0.1.6.tgz) from the latest Release (size in bytes and SHA256 are authoritative in the same release's `SHA256SUMS.txt` asset and intentionally not hard-coded here — this README ships inside that tgz, so quoting its own hash would be self-referential).
 2. Install it globally (purely local, no registry access):
 
 ```bash
-npm install -g ./uemcp-server-0.1.5.tgz
+npm install -g ./uemcp-server-0.1.6.tgz
 ```
 
 3. Start it and check the health endpoint:
@@ -551,6 +552,7 @@ Enable writes in this order (both sides must agree):
 - `/health` also returns `buildHash` (sha256 over every plugin Python file), `buildTime`, `sourcePath` (the plugin directory actually loaded) and `instanceId` — use them after an upgrade to tell whether the new build is loaded and whether a backup directory shadowed it.
 - Sessions have an idle **TTL (30 min by default)** and a **cap (32 by default, lower it with `--max-sessions` / `UEMCP_MAX_SESSIONS`)**. When the pool is full the oldest **idle** session is evicted (sessions holding a live SSE stream are never evicted); only when every session holds a live stream does the server answer 429 (with `retryAfterMs`).
 - `initialize` responses carry `Mcp-Session-Expires-In-Ms`; an expired session returns `404 -32001` with `data.hint="reinitialize"`, so a well-behaved client heals itself by re-initializing.
+- **Audit log contract (clarified in the 0.1.5 second batch)**: `~/.uemcp/audit/YYYY-MM-DD.jsonl` rotates daily with a **fixed 30-day retention (`RETENTION_DAYS` constant, not configurable)**; expired files are purged at startup. **Every tool call is audited** — read-only tools included. Failures carry `errorCode` plus the bridge's `origin`/`stage`; every record snapshots the effective policy (`policySnapshot`: server mode/source/switches + bridge policies/rate limit), the discovery `schemaVersion` and, while a bridge is connected, its build identity (`instanceId`/`buildHash`/`buildTime`/`sourcePath`). Audit write failures never block tool calls; after 3 consecutive failures the server warns on stderr and flags `auditDegraded=true` in `/health`. The stdio transport is a single session, so its records carry no `sessionId` (HTTP only). Tokens, Python source and screenshot base64 are never logged.
 
 > ⚠️ **Inherent risk of a local developer tool**: enabling `ue_python_exec` hands control of the editor process to the caller (no sandbox, no way to interrupt a running snippet). Any local process can read `~/.uemcp/bridge.json` and obtain the bridge token. This is the inherent boundary of a local development tool: use it in trusted environments only, and never enable exec for screen recordings, demos or CI.
 
@@ -558,12 +560,12 @@ Enable writes in this order (both sides must agree):
 
 ```bash
 cd uemcp
-pnpm smoke        # server self-test: SMOKE RESULT: 84/84 passed
-pnpm test         # node --test: unit + black-box, 59 cases
+pnpm smoke        # server self-test: SMOKE RESULT: 87/87 passed
+pnpm test         # node --test: unit + black-box, 82 cases
 pnpm typecheck && pnpm build
 ```
 
-UE-side self-checks (11 scripts that need no engine, plus a commandlet smoke test) are documented in [UEMCPBridge/README.md](UEMCPBridge/README.md) §7. Test ports: 18999 and 19001–19008 for smoke, 19101–19199 for unit tests, so the real 18777/18778 ports are never touched.
+UE-side self-checks (20 scripts that need no engine, plus 4 that require one) are documented in [UEMCPBridge/README.md](UEMCPBridge/README.md) §7. Test ports: 18999 and 19001–19008 for smoke, 19101–19199 for unit tests, so the real 18777/18778 ports are never touched.
 
 ### Repository layout
 
@@ -571,7 +573,7 @@ UE-side self-checks (11 scripts that need no engine, plus a commandlet smoke tes
 ├─ UEMCPBridge/        # UE 5.4/5.7 pure-Python plugin (bridge + self-tests)
 ├─ uemcp/              # MCP server (pnpm workspace: packages/shared + packages/server)
 │  ├─ packages/shared/ # tool names, zod schemas, error codes (@uemcp/shared)
-│  ├─ packages/server/ # CLI, transports, discovery, policy, audit, 10 tools (@uemcp/server)
+│  ├─ packages/server/ # CLI, transports, discovery, policy, audit, 15 tools (@uemcp/server)
 │  ├─ scripts/         # smoke.mjs, mock-bridge.mjs, start/stop-server.ps1
 │  └─ tests/           # node --test unit and black-box tests
 ├─ docs/               # architecture v0.2.0, decisions, test plan and report, code review
@@ -583,7 +585,7 @@ UE-side self-checks (11 scripts that need no engine, plus a commandlet smoke tes
 
 | Document | Contents |
 |---|---|
-| [docs/UEMCP-架构设计.md](docs/UEMCP-架构设计.md) | Architecture baseline v0.2.0: ports, discovery, error model, 10-tool schemas, security model |
+| [docs/UEMCP-架构设计.md](docs/UEMCP-架构设计.md) | Architecture baseline v0.2.0: ports, discovery, error model, schemas for the 10 MVP tools, security model (the server now ships 15 tools — see `shared/src/toolNames.ts` for the five added since) |
 | [docs/UEMCP-路线图.md](docs/UEMCP-路线图.md) | Roadmap: done / in progress / planned / explicitly out of scope (each with a reason and an alternative) |
 | [docs/UEMCP-架构裁决补充.md](docs/UEMCP-架构裁决补充.md) | Seven key decisions (error-code table, confirmation flow, port policy, …) |
 | [uemcp/README-DEV.md](uemcp/README-DEV.md) | Developer guide: build, run, deploy, self-tests, implementation contracts, known limitations |

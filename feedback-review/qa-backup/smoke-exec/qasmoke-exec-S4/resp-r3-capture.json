@@ -1,0 +1,53 @@
+{
+  "ts": "2026-11-18T07:08:02.135Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9850,
+    "method": "viewport.capture",
+    "params": {
+      "target": "level_viewport",
+      "width": 640,
+      "height": 360,
+      "format": "png",
+      "returnMode": "file",
+      "timeoutMs": 20000
+    }
+  },
+  "httpStatus": 504,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 9850,
+    "error": {
+      "code": -32037,
+      "message": "Screenshot task timed out after 20000 ms",
+      "data": {
+        "errorCode": "CAPTURE_TIMEOUT",
+        "retryable": true,
+        "details": {
+          "target": "level_viewport",
+          "timeoutMs": 20000,
+          "waitedMs": 19671,
+          "ticks": 59,
+          "targetPath": "C:\\Users\\Administrator\\Documents\\Unreal Projects\\UEMCP_Smoke_Blank\\Saved\\UEMCP\\captures\\ba68e84d3f67439dbc746f1dfecbb00b.png",
+          "fileExists": false,
+          "fileBytes": 0,
+          "partialGraceMs": 500,
+          "forceGameView": false,
+          "renderer": {
+            "pixelStreaming": false,
+            "offscreen": false,
+            "commandLine": "-log -nop4 -nosplash",
+            "webApiConfig": "../../../../../../Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank/Config/DefaultWebAPI.ini"
+          },
+          "activation": null,
+          "stage": "viewport.capture",
+          "origin": "bridge"
+        }
+      }
+    }
+  },
+  "durationMs": 19926
+}

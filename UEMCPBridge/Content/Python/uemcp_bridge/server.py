@@ -33,6 +33,7 @@ from .errors import (
     INVALID_REQUEST,
     PARSE_ERROR,
     RpcError,
+    annotate_origin_stage,
 )
 from .ratelimit import RateLimiter
 from .rpc import handle_request
@@ -45,6 +46,11 @@ from .settings import (
 from .handlers.status import detect_capabilities
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
+
+# Batch-2 request-level log: serialize appends across HTTP threads and rotate
+# at 5 MiB (single .1 backup).  Audit records carry no code/params/token.
+_RPC_LOG_LOCK = threading.Lock()
+_RPC_LOG_MAX_BYTES = 5 * 1024 * 1024
 
 # Plugin root: <Plugin>/Content/Python/uemcp_bridge/server.py -> <Plugin>
 _PLUGIN_ROOT = os.path.abspath(
@@ -125,6 +131,37 @@ def _build_time():
     return value
 
 
+def health_payload(server):
+    """Build the ``/health`` payload for a server-like object.
+
+    Kept at module level (``BridgeServer.health_payload`` delegates here) so the
+    schema can be exercised by the offline self-checks with a duck-typed stub,
+    without constructing a real BridgeServer or importing the editor.
+    """
+    rate_limiter = getattr(server, "rate_limiter", None)
+    settings = getattr(server, "settings", None)
+    return {
+        "app": "uemcp-bridge",
+        "schemaVersion": discovery.SCHEMA_VERSION,
+        "ok": True,
+        "ueVersion": getattr(server, "ue_version", "unknown"),
+        "pluginVersion": PLUGIN_VERSION,
+        "bridgeProtocol": getattr(server, "bridge_protocol", BRIDGE_PROTOCOL),
+        "port": getattr(server, "port", None),
+        "pid": os.getpid(),
+        "instanceId": _INSTANCE_ID,
+        "buildHash": _build_hash(),
+        "buildTime": _build_time(),
+        "sourcePath": _PLUGIN_ROOT,
+        "projectDir": discovery.normalize_project_dir(getattr(server, "project_dir", "")),
+        "projectFile": getattr(server, "project_file", ""),
+        "startedAt": getattr(server, "started_at", None),
+        "capabilities": dict(getattr(server, "capabilities", None) or {}),
+        "rateLimit": rate_limiter.snapshot() if rate_limiter else None,
+        "policies": settings.policy_snapshot() if settings else {},
+    }
+
+
 def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -203,16 +240,37 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self._send_json(404, {"error": "not_found"})
 
     def do_POST(self):
+        started = time.monotonic()
+        self._reject_reason = None
         bridge = self.server.bridge
         if not self._check_network():
+            reason, status = self._reject_reason or ("network_rejected", 403)
+            self._log_rpc_request(
+                started, ok=False, http_status=status, error_code=reason,
+                details={"origin": "caller", "stage": "http"},
+            )
             return
         path = urlparse(self.path).path
         if path != "/rpc":
             self._send_json(404, {"error": "not_found"})
+            self._log_rpc_request(
+                started, ok=False, http_status=404, error_code="not_found",
+                details={"origin": "caller", "stage": "http"},
+            )
             return
         if not self._check_content_type():
+            reason, status = self._reject_reason or ("content_type_must_be_json", 415)
+            self._log_rpc_request(
+                started, ok=False, http_status=status, error_code=reason,
+                details={"origin": "caller", "stage": "http"},
+            )
             return
         if not self._check_token():
+            reason, status = self._reject_reason or ("unauthorized", 401)
+            self._log_rpc_request(
+                started, ok=False, http_status=status, error_code=reason,
+                details={"origin": "caller", "stage": "http"},
+            )
             return
 
         try:
@@ -220,52 +278,76 @@ class _RequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             length = 0
         if length <= 0:
-            self._send_rpc_error(
+            sent = self._send_rpc_error(
                 None, "INVALID_REQUEST", "Content-Length is required",
                 INVALID_REQUEST, 400,
             )
+            self._log_rpc_request(
+                started, ok=False, http_status=400, error_code="INVALID_REQUEST",
+                details=sent,
+            )
             return
         if length > MAX_BODY_BYTES:
-            self._send_rpc_error(
+            sent = self._send_rpc_error(
                 None, "PAYLOAD_TOO_LARGE", "Request body exceeds 8 MiB",
                 -32011, 413,
+            )
+            self._log_rpc_request(
+                started, ok=False, http_status=413, error_code="PAYLOAD_TOO_LARGE",
+                details=sent,
             )
             return
 
         try:
             raw = self.rfile.read(length)
         except Exception:
-            self._send_rpc_error(
+            sent = self._send_rpc_error(
                 None, "INVALID_REQUEST", "Failed to read request body",
                 INVALID_REQUEST, 400,
+            )
+            self._log_rpc_request(
+                started, ok=False, http_status=400, error_code="INVALID_REQUEST",
+                details=sent,
             )
             return
 
         try:
             request = json.loads(raw.decode("utf-8"))
         except Exception:
-            self._send_rpc_error(None, "PARSE_ERROR", "Invalid JSON", PARSE_ERROR, 400)
+            sent = self._send_rpc_error(None, "PARSE_ERROR", "Invalid JSON", PARSE_ERROR, 400)
+            self._log_rpc_request(
+                started, ok=False, http_status=400, error_code="PARSE_ERROR",
+                details=sent,
+            )
             return
 
         if not isinstance(request, dict):
-            self._send_rpc_error(
+            sent = self._send_rpc_error(
                 None, "INVALID_REQUEST", "JSON-RPC envelope must be an object",
                 INVALID_REQUEST, 400,
+            )
+            self._log_rpc_request(
+                started, ok=False, http_status=400, error_code="INVALID_REQUEST",
+                details=sent,
             )
             return
 
         request_id = request.get("id")
         if request.get("jsonrpc") != "2.0":
-            self._send_rpc_error(
+            sent = self._send_rpc_error(
                 request_id, "INVALID_REQUEST", "jsonrpc must be '2.0'",
                 INVALID_REQUEST, 400,
+            )
+            self._log_rpc_request(
+                started, request=request, ok=False, http_status=400,
+                error_code="INVALID_REQUEST", details=sent,
             )
             return
 
         try:
             result = handle_request(bridge, request)
         except RpcError as exc:
-            self._send_rpc_error(
+            sent = self._send_rpc_error(
                 request_id,
                 exc.code,
                 exc.message,
@@ -274,30 +356,63 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 details=exc.details,
                 retryable=exc.retryable,
             )
+            self._log_rpc_request(
+                started, request=request, ok=False, http_status=exc.http_status,
+                error_code=exc.code, details=sent,
+            )
             return
         except DispatcherBusy as exc:
-            self._send_rpc_error(
+            sent = self._send_rpc_error(
                 request_id, "BRIDGE_BUSY", str(exc), -32002, 429,
-                details={"gate": "game_thread.queue"}, retryable=True,
+                details={
+                    "gate": "game_thread.queue",
+                    "origin": "bridge",
+                    "stage": "queue",
+                },
+                retryable=True,
+            )
+            self._log_rpc_request(
+                started, request=request, ok=False, http_status=429,
+                error_code="BRIDGE_BUSY", details=sent,
             )
             return
         except DispatcherTimeout as exc:
-            self._send_rpc_error(
+            # Report the budget that actually expired, not the configured
+            # default (batch 2 / appendix E).
+            timeout_ms = getattr(exc, "timeout_ms", None) or bridge.settings.request_timeout_ms
+            sent = self._send_rpc_error(
                 request_id, "BRIDGE_TIMEOUT", str(exc), -32020, 504,
-                details={"timeoutMs": bridge.settings.request_timeout_ms, "phase": "game_thread"},
+                details={
+                    "timeoutMs": timeout_ms,
+                    "phase": "game_thread",
+                    "origin": "bridge",
+                    "stage": "game_thread",
+                },
                 retryable=True,
+            )
+            self._log_rpc_request(
+                started, request=request, ok=False, http_status=504,
+                error_code="BRIDGE_TIMEOUT", details=sent,
             )
             return
         except Exception as exc:
             _log_error("rpc handler crashed: %s\n%s" % (exc, traceback.format_exc()))
-            self._send_rpc_error(
+            sent = self._send_rpc_error(
                 request_id, "INTERNAL", str(exc), INTERNAL_ERROR, 500,
-                details={"reason": str(exc)},
+                details={"reason": str(exc), "origin": "bridge", "stage": "rpc"},
+            )
+            self._log_rpc_request(
+                started, request=request, ok=False, http_status=500,
+                error_code="INTERNAL", details=sent,
             )
             return
 
         self._send_json(
             200, {"jsonrpc": "2.0", "id": request_id, "result": result}
+        )
+        self._log_rpc_request(
+            started, request=request, ok=True, http_status=200,
+            meta=result.get("meta") if isinstance(result, dict) else None,
         )
 
     # -- helpers ----------------------------------------------------------
@@ -305,13 +420,16 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _check_network(self):
         bridge = self.server.bridge
         if not security.is_loopback_peer(self.client_address[0]):
+            self._reject_reason = ("loopback_only", 403)
             self._send_json(403, {"error": "loopback_only"})
             return False
         port = self.server.server_address[1]
         if not security.valid_host(self.headers.get("Host"), port):
+            self._reject_reason = ("invalid_host", 421)
             self._send_json(421, {"error": "invalid_host"})
             return False
         if not security.valid_origin(self.headers.get("Origin"), port):
+            self._reject_reason = ("invalid_origin", 403)
             self._send_json(403, {"error": "invalid_origin"})
             return False
         return True
@@ -319,6 +437,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _check_content_type(self):
         content_type = (self.headers.get("Content-Type") or "").lower()
         if "application/json" not in content_type:
+            self._reject_reason = ("content_type_must_be_json", 415)
             self._send_json(415, {"error": "content_type_must_be_json"})
             return False
         return True
@@ -327,6 +446,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         bridge = self.server.bridge
         supplied = self.headers.get("X-UEMCP-Token")
         if not security.token_matches(bridge.token, supplied):
+            self._reject_reason = ("unauthorized", 401)
             self._send_json(401, {"error": "unauthorized"})
             return False
         return True
@@ -338,6 +458,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _send_rpc_error(
         self, request_id, error_code, message, rpc_code, status, details=None, retryable=False
     ):
+        # Central origin/stage annotation (batch 2): this is the real response
+        # path for every RPC error; explicit raise-site values always win.
+        details = annotate_origin_stage(error_code, details)
         payload = {
             "jsonrpc": "2.0",
             "id": request_id,
@@ -347,11 +470,63 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 "data": {
                     "errorCode": error_code,
                     "retryable": bool(retryable),
-                    "details": details or {},
+                    "details": details,
                 },
             },
         }
         self._send_json(status, payload)
+        return details
+
+    def _log_rpc_request(self, started, request=None, ok=False, http_status=None,
+                         error_code=None, details=None, meta=None):
+        """Batch-2 request-level audit log: one compact record per POST /rpc
+        response, including envelope errors and HTTP-layer rejections.
+
+        Never logs message text, request params, code content or tokens.
+        Logging failures must never break request handling.
+        """
+        try:
+            duration_ms = int((time.monotonic() - started) * 1000)
+            request_id = None
+            method = None
+            if isinstance(request, dict):
+                raw_id = request.get("id")
+                if raw_id is not None:
+                    request_id = str(raw_id)[:128]
+                raw_method = request.get("method")
+                if isinstance(raw_method, str):
+                    method = raw_method[:128]
+            if request_id is None and isinstance(meta, dict):
+                raw_id = meta.get("requestId")
+                if raw_id is not None:
+                    request_id = str(raw_id)[:128]
+            details = details if isinstance(details, dict) else {}
+            record = {
+                "ts": _utc_now(),
+                "requestId": request_id,
+                "method": method,
+                "ok": bool(ok),
+                "errorCode": str(error_code)[:64] if error_code is not None else None,
+                "httpStatus": http_status,
+                "durationMs": duration_ms,
+                "queuedMs": meta.get("queuedMs") if isinstance(meta, dict) else None,
+                "origin": details.get("origin"),
+                "stage": details.get("stage"),
+            }
+            line = json.dumps(record, ensure_ascii=False)
+            _log("rpc_request %s" % line)
+            log_path = getattr(self.server.bridge, "request_log_path", None)
+            if log_path:
+                with _RPC_LOG_LOCK:
+                    try:
+                        if os.path.getsize(log_path) > _RPC_LOG_MAX_BYTES:
+                            os.replace(log_path, log_path + ".1")
+                    except OSError:
+                        pass
+                    with open(log_path, "a", encoding="utf-8") as handle:
+                        handle.write(line + "\n")
+        except Exception:
+            pass
 
     def _write_response(self, status, content_type, body):
         try:
@@ -398,6 +573,7 @@ class BridgeServer(object):
         self.thread = None
         self.dispatcher = None
         self.rate_limiter = None
+        self.request_log_path = None
         self.capabilities = {}
         self.plugin_version = PLUGIN_VERSION
         self.bridge_protocol = BRIDGE_PROTOCOL
@@ -426,6 +602,16 @@ class BridgeServer(object):
         self.ue_version = self._engine_version()
         self.settings = Settings.load(self.project_dir)
         self.token = self.settings.token_override or security.generate_token()
+        # Batch-2 request-level log sink: <project>/Saved/UEMCP/rpc-requests.jsonl.
+        # When the project dir is unknown or unwritable, editor-log-only.
+        self.request_log_path = None
+        if self.project_dir:
+            try:
+                log_dir = os.path.join(self.project_dir, "Saved", "UEMCP")
+                os.makedirs(log_dir, exist_ok=True)
+                self.request_log_path = os.path.join(log_dir, "rpc-requests.jsonl")
+            except OSError:
+                self.request_log_path = None
         self.capabilities = detect_capabilities()
         self.rate_limiter = RateLimiter.from_settings(self.settings)
         self.dispatcher = dispatcher if dispatcher is not None else GameThreadDispatcher(
@@ -551,30 +737,13 @@ class BridgeServer(object):
                 pass
             self.dispatcher = None
         self.rate_limiter = None
+        self.request_log_path = None
         _log("bridge_stopped pid=%d" % os.getpid())
 
     # -- info -------------------------------------------------------------
 
     def health_payload(self):
-        return {
-            "app": "uemcp-bridge",
-            "ok": True,
-            "ueVersion": self.ue_version,
-            "pluginVersion": PLUGIN_VERSION,
-            "bridgeProtocol": BRIDGE_PROTOCOL,
-            "port": self.port,
-            "pid": os.getpid(),
-            "instanceId": _INSTANCE_ID,
-            "buildHash": _build_hash(),
-            "buildTime": _build_time(),
-            "sourcePath": _PLUGIN_ROOT,
-            "projectDir": discovery.normalize_project_dir(self.project_dir),
-            "projectFile": self.project_file,
-            "startedAt": self.started_at,
-            "capabilities": dict(self.capabilities),
-            "rateLimit": self.rate_limiter.snapshot() if self.rate_limiter else None,
-            "policies": self.settings.policy_snapshot() if self.settings else {},
-        }
+        return health_payload(self)
 
     def _project_dir(self):
         if unreal is not None:

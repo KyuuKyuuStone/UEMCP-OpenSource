@@ -1,0 +1,48 @@
+{
+  "ts": "2026-11-18T06:54:01.016Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1526,
+    "method": "editor.status",
+    "params": {
+      "sections": [
+        "policies"
+      ]
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1526,
+    "result": {
+      "ok": true,
+      "data": {
+        "policies": {
+          "mode": "read-only",
+          "write": false,
+          "exec": false,
+          "console": false,
+          "destructive": false,
+          "source": "defaults",
+          "envOverrides": [
+            "UEMCP_BRIDGE_ALLOW_WRITE",
+            "UEMCP_BRIDGE_ALLOW_EXEC",
+            "UEMCP_BRIDGE_ALLOW_CONSOLE"
+          ]
+        }
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 1526,
+        "durationMs": 0,
+        "queuedMs": 0,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 9
+}

@@ -1,0 +1,39 @@
+{
+  "ts": "2026-11-18T07:04:29.821Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9709,
+    "method": "pie.control",
+    "params": {
+      "action": "stop"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 9709,
+    "result": {
+      "ok": true,
+      "data": {
+        "action": "stop",
+        "isPieRunning": false,
+        "isSimulating": false,
+        "world": null,
+        "startedAt": null,
+        "durationMs": 391
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 9709,
+        "durationMs": 656,
+        "queuedMs": 264,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 662
+}

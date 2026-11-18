@@ -36,7 +36,8 @@ export const ViewportCaptureInput = z
     // 正常 MCP 路径必现 INVALID_ARGUMENT: Unrecognized key(s): 'activateWindow'。
     // 默认值与 Bridge 的 get_bool("activateWindow", default=False) 对齐。
     activateWindow: z.boolean().default(false),
-    timeoutMs: z.number().int().min(1000).max(30000).default(15000),
+    // B-3.3：上限 30000→20000（与 ToolDef.timeoutMs=20000 对齐）；default 15000 不变
+    timeoutMs: z.number().int().min(1000).max(20000).default(15000),
   })
   .strict();
 

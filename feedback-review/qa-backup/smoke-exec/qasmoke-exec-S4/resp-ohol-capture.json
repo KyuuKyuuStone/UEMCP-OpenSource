@@ -1,0 +1,41 @@
+{
+  "ts": "2026-11-18T07:04:30.094Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 6557,
+    "method": "viewport.capture",
+    "params": {
+      "target": "editor",
+      "width": 640,
+      "height": 360
+    }
+  },
+  "httpStatus": 400,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 6557,
+    "error": {
+      "code": -32602,
+      "message": "target: must be one of level_viewport, pie",
+      "data": {
+        "errorCode": "INVALID_ARGUMENT",
+        "retryable": false,
+        "details": {
+          "issues": [
+            {
+              "path": "target",
+              "code": "invalid_enum_value",
+              "message": "must be one of level_viewport, pie"
+            }
+          ],
+          "origin": "caller",
+          "stage": "viewport.capture"
+        }
+      }
+    }
+  },
+  "durationMs": 193
+}

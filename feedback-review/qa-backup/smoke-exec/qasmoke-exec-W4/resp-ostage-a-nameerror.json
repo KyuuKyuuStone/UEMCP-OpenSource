@@ -1,0 +1,33 @@
+{
+  "ts": "2026-11-18T07:25:05.457Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9134,
+    "method": "python.exec",
+    "params": {
+      "code": "raise NameError(\"qa_o_stage_caller_error\")\n"
+    }
+  },
+  "httpStatus": 500,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 9134,
+    "error": {
+      "code": -32014,
+      "message": "NameError: qa_o_stage_caller_error",
+      "data": {
+        "errorCode": "PYTHON_ERROR",
+        "retryable": false,
+        "details": {
+          "traceback": "Traceback (most recent call last):\n  File \"C:\\Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank/Plugins/UEMCPBridge/Content/Python\\uemcp_bridge\\handlers\\python_exec.py\", line 59, in handle\n    exec(compile(code, \"<uemcp>\", \"exec\"), scope)\n  File \"<uemcp>\", line 1, in <module>\nNameError: qa_o_stage_caller_error\n",
+          "origin": "caller",
+          "stage": "python.exec"
+        }
+      }
+    }
+  },
+  "durationMs": 16
+}

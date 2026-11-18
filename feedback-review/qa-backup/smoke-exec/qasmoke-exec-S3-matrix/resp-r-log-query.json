@@ -1,0 +1,65 @@
+{
+  "ts": "2026-11-18T06:54:00.828Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 2307,
+    "method": "log.query",
+    "params": {
+      "limit": 5
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2307,
+    "result": {
+      "ok": true,
+      "data": {
+        "logPath": "C:\\Users\\Administrator\\Documents\\Unreal Projects\\UEMCP_Smoke_Blank\\Saved\\Logs\\UEMCP_Smoke_Blank.log",
+        "scannedLines": 1398,
+        "matched": 1398,
+        "unclassified": 19,
+        "truncated": true,
+        "lines": [
+          {
+            "lineNo": 1,
+            "level": null,
+            "text": "﻿Log file open, 11/18/26 14:53:23"
+          },
+          {
+            "lineNo": 2,
+            "level": "Log",
+            "text": "LogWindows: Failed to load 'aqProf.dll' (GetLastError=126)"
+          },
+          {
+            "lineNo": 3,
+            "level": "Log",
+            "text": "LogWindows: File 'aqProf.dll' does not exist"
+          },
+          {
+            "lineNo": 4,
+            "level": "Log",
+            "text": "LogProfilingDebugging: Loading WinPixEventRuntime.dll for PIX profiling (from ../../../Engine/Binaries/ThirdParty/Windows/WinPixEventRuntime/x64)."
+          },
+          {
+            "lineNo": 5,
+            "level": "Log",
+            "text": "LogWindows: Failed to load 'VtuneApi.dll' (GetLastError=126)"
+          }
+        ]
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 2307,
+        "durationMs": 14,
+        "queuedMs": 0,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 14
+}

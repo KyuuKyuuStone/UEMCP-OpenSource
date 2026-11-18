@@ -1,0 +1,39 @@
+{
+  "ts": "2026-11-18T06:54:00.924Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 6235,
+    "method": "object.reflect",
+    "params": {
+      "path": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"
+    }
+  },
+  "httpStatus": 400,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 6235,
+    "error": {
+      "code": -32602,
+      "message": "params.path: additional property 'path' is not allowed",
+      "data": {
+        "errorCode": "INVALID_ARGUMENT",
+        "retryable": false,
+        "details": {
+          "issues": [
+            {
+              "path": "params.path",
+              "code": "additional_property",
+              "message": "additional property 'path' is not allowed"
+            }
+          ],
+          "origin": "caller",
+          "stage": "object.reflect"
+        }
+      }
+    }
+  },
+  "durationMs": 13
+}

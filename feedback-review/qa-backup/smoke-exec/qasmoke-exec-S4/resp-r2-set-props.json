@@ -1,0 +1,53 @@
+{
+  "ts": "2026-11-18T07:06:09.430Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 3713,
+    "method": "actor.edit",
+    "params": {
+      "operations": [
+        {
+          "op": "set_properties",
+          "selector": {
+            "kind": "actorPath",
+            "value": "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_UAID_00FFAABBCCDD161603_1473696936"
+          },
+          "properties": {
+            "mobility": "movable",
+            "tags": {
+              "qa": "s4"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "httpStatus": 400,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 3713,
+    "error": {
+      "code": -32602,
+      "message": "operations[0].properties.tags: must be an array",
+      "data": {
+        "errorCode": "INVALID_ARGUMENT",
+        "retryable": false,
+        "details": {
+          "issues": [
+            {
+              "path": "operations[0].properties.tags",
+              "code": "invalid_type",
+              "message": "must be an array"
+            }
+          ],
+          "origin": "caller",
+          "stage": "actor.edit"
+        }
+      }
+    }
+  },
+  "durationMs": 246
+}

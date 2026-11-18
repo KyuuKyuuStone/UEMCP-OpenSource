@@ -5,7 +5,8 @@
  * CustomDomainCmdHandler 上暴露的 fly_to_monitor_point 等。
  */
 import { reflectInputSchema } from "@uemcp/shared";
-import { makeMeta, okResult, errResult, toolError, type ToolContext, type ToolDef } from "./common.js";
+import { summarizeArgs } from "../audit.js";
+import { auditCall, makeMeta, okResult, errResult, toolError, type ToolContext, type ToolDef } from "./common.js";
 
 export const reflectTool: ToolDef = {
   name: "ue_reflect",
@@ -31,6 +32,18 @@ export const reflectTool: ToolDef = {
     }
     const res = await ctx.bridge.call("object.reflect", parsed.data as Record<string, unknown>, reflectTool.timeoutMs);
     const meta = makeMeta(ctx, started);
+    // B-3.7：读工具统一纳入审计（仅摘要；invalidArgument 早退不审计）
+    await auditCall(ctx, {
+      tool: reflectTool.name,
+      rpcMethod: reflectTool.rpcMethod,
+      requestId: meta.requestId,
+      durationMs: meta.durationMs,
+      ok: res.ok,
+      errorCode: res.ok ? null : (res.error?.code ?? "INTERNAL"),
+      decision: "allowed",
+      argsSummary: summarizeArgs(reflectTool.name, parsed.data as Record<string, unknown>),
+      errorDetails: res.error?.details,
+    });
     if (!res.ok) return errResult(res.error ?? toolError("INTERNAL", "bridge call failed"), meta);
     return okResult(
       reflectTool.name,

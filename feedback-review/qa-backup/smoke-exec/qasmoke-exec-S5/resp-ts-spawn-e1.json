@@ -1,0 +1,69 @@
+{
+  "ts": "2026-11-18T07:11:29.845Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1745,
+    "method": "actor.edit",
+    "params": {
+      "operations": [
+        {
+          "op": "spawn",
+          "class": "StaticMeshActor",
+          "label": "QASmokeE1",
+          "location": {
+            "x": 400,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1745,
+    "result": {
+      "ok": true,
+      "data": {
+        "dryRun": false,
+        "results": [
+          {
+            "index": 0,
+            "op": "spawn",
+            "ok": true,
+            "created": [
+              {
+                "actorPath": "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_UAID_00FFAABBCCDD161603_1794776940",
+                "objectPath": "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_UAID_00FFAABBCCDD161603_1794776940",
+                "name": "StaticMeshActor_UAID_00FFAABBCCDD161603_1794776940",
+                "label": "QASmokeE1",
+                "class": "StaticMeshActor",
+                "classPath": "/Script/Engine.StaticMeshActor",
+                "levelPath": "/Temp/Untitled_1.Untitled_1"
+              }
+            ]
+          }
+        ],
+        "summary": {
+          "requested": 1,
+          "succeeded": 1,
+          "failed": 0,
+          "rolledBack": false
+        }
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 1745,
+        "durationMs": 16,
+        "queuedMs": 0,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 19
+}

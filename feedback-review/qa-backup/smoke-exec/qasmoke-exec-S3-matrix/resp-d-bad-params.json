@@ -1,0 +1,39 @@
+{
+  "ts": "2026-11-18T06:54:00.623Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 2075,
+    "method": "actor.query",
+    "params": {
+      "limit": "abc"
+    }
+  },
+  "httpStatus": 400,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2075,
+    "error": {
+      "code": -32602,
+      "message": "limit: must be an integer",
+      "data": {
+        "errorCode": "INVALID_ARGUMENT",
+        "retryable": false,
+        "details": {
+          "issues": [
+            {
+              "path": "limit",
+              "code": "invalid_type",
+              "message": "must be an integer"
+            }
+          ],
+          "origin": "caller",
+          "stage": "actor.query"
+        }
+      }
+    }
+  },
+  "durationMs": 13
+}

@@ -1,0 +1,6 @@
+[
+  { "call": "initialize" },
+  { "call": "tools/call", "name": "ue_actor_edit", "args": { "operations": [ { "op": "spawn", "class": "StaticMeshActor", "label": "QASmokeW4", "location": { "x": 300.0, "y": 0.0, "z": 0.0 } } ] }, "elicitation": "accept" },
+  { "call": "tools/call", "name": "ue_actor_edit", "args": { "operations": [ { "op": "delete", "selector": { "kind": "label", "value": "QASmokeW4" }, "confirm": false } ] }, "elicitation": "accept" },
+  { "call": "tools/call", "name": "ue_actor_query", "args": { "filter": { "labelContains": "QASmokeW4" }, "fields": [ "identity" ], "limit": 20 } }
+]

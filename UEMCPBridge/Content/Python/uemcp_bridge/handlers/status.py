@@ -42,6 +42,14 @@ def detect_capabilities():
         )
     except Exception:
         pie_control = False
+    pixel_streaming = False
+    try:
+        from . import viewport as _viewport
+        pixel_streaming = bool(
+            _viewport._render_environment().get("pixelStreaming")
+        )
+    except Exception:
+        pixel_streaming = False
     return {
         "python": True,
         "screenshot": automation is not None
@@ -55,6 +63,7 @@ def detect_capabilities():
         "console": system_library is not None
         and hasattr(system_library, "execute_console_command"),
         "pieControl": bool(pie_control),
+        "pixelStreaming": pixel_streaming,
     }
 
 
@@ -208,7 +217,8 @@ def handle(server, params):
                             "code": "invalid_enum_value",
                             "message": "must be one of %s" % ", ".join(sorted(ALL_SECTIONS)),
                         }
-                    ]
+                    ],
+                    "origin": "caller",
                 },
             )
     selection_limit = get_int(

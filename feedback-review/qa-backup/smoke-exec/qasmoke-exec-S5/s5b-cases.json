@@ -1,0 +1,8 @@
+[
+  { "call": "initialize" },
+  { "call": "tools/list" },
+  { "call": "tools/call", "name": "ue_python_exec", "args": { "code": "print('qa-s5b-accept')\n7*6" }, "elicitation": "accept" },
+  { "call": "tools/call", "name": "ue_python_exec", "args": { "code": "print('qa-s5b-declined-must-not-run')" }, "elicitation": "decline" },
+  { "call": "tools/call", "name": "ue_console_command", "args": { "command": "stat fps" }, "elicitation": "accept" },
+  { "call": "tools/call", "name": "ue_console_command", "args": { "command": "stat unit" }, "elicitation": "decline" }
+]

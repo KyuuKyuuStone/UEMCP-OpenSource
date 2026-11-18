@@ -1,0 +1,66 @@
+{
+  "ts": "2026-11-18T07:06:10.431Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 5602,
+    "method": "actor.edit",
+    "params": {
+      "operations": [
+        {
+          "op": "spawn",
+          "class": "StaticMeshActor",
+          "label": "QASmokeDryRun2"
+        }
+      ],
+      "dryRun": true
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 5602,
+    "result": {
+      "ok": true,
+      "data": {
+        "dryRun": true,
+        "results": [
+          {
+            "index": 0,
+            "op": "spawn",
+            "ok": true,
+            "created": [
+              {
+                "actorPath": "",
+                "objectPath": "",
+                "name": "",
+                "label": "QASmokeDryRun2",
+                "class": "StaticMeshActor",
+                "classPath": "",
+                "levelPath": "",
+                "wouldCreate": true
+              }
+            ]
+          }
+        ],
+        "summary": {
+          "requested": 1,
+          "succeeded": 1,
+          "failed": 0,
+          "rolledBack": false
+        }
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 5602,
+        "durationMs": 202,
+        "queuedMs": 202,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 219
+}

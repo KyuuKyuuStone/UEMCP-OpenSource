@@ -163,15 +163,30 @@ def _bfs(
     include_referencers,
     deadline,
     warnings,
+    max_nodes=_MAX_BFS_NODES,
+    timeout_ms=None,
 ):
-    """Breadth-first expansion with a hard node budget and a deadline."""
+    """Breadth-first expansion with a hard node budget and a deadline.
+
+    ``max_nodes`` caps how many related nodes are enqueued for expansion;
+    hitting the cap truncates the relation graph and appends a warning
+    instead of silently dropping nodes. ``timeout_ms`` is the configured
+    search budget reported in SEARCH_TIMEOUT details (always positive).
+    """
     collected = {}
     visited = set()
     frontier = list(seeds[:_MAX_SEEDS])
+    if len(seeds) > _MAX_SEEDS:
+        warnings.append(
+            "BFS_SEEDS_TRUNCATED: %d seed assets exceed the %d-seed cap; "
+            "only the first %d are expanded"
+            % (len(seeds), _MAX_SEEDS, _MAX_SEEDS)
+        )
     for seed in frontier:
         visited.add(seed)
 
     total_nodes = 0
+    budget_hit = False
     for level in range(max(1, depth)):
         if not frontier:
             break
@@ -182,7 +197,7 @@ def _bfs(
                     "SEARCH_TIMEOUT",
                     "Asset relation search exceeded the deadline",
                     {
-                        "timeoutMs": int((deadline - time.monotonic()) * 1000),
+                        "timeoutMs": int(timeout_ms or 0),
                         "partial": {
                             "total": len(collected),
                             "returned": len(collected),
@@ -203,11 +218,21 @@ def _bfs(
             if include_referencers and referencers:
                 collected.setdefault(package_name + "__referencers", referencers)
             for related in dependencies + referencers:
-                if related not in visited and total_nodes < _MAX_BFS_NODES:
-                    visited.add(related)
-                    next_frontier.append(related)
-                    total_nodes += 1
+                if related in visited:
+                    continue
+                if total_nodes >= max_nodes:
+                    budget_hit = True
+                    continue
+                visited.add(related)
+                next_frontier.append(related)
+                total_nodes += 1
         frontier = next_frontier
+    if budget_hit:
+        warnings.append(
+            "BFS_BUDGET_TRUNCATED: relation expansion stopped at maxNodes=%d "
+            "(%d nodes visited); increase maxNodes or narrow the query"
+            % (max_nodes, len(visited))
+        )
     return collected
 
 
@@ -227,6 +252,7 @@ def handle(server, params):
             "limit",
             "offset",
             "sortBy",
+            "maxNodes",
         },
     )
     query = get_str(params, "query", default="", max_length=256) or ""
@@ -246,6 +272,9 @@ def handle(server, params):
     offset = get_int(params, "offset", default=0, minimum=0)
     sort_by = get_enum(
         params, "sortBy", {"path", "class", "name"}, default="path"
+    )
+    max_nodes = get_int(
+        params, "maxNodes", default=_MAX_BFS_NODES, minimum=1, maximum=10000
     )
 
     unreal = get_unreal()
@@ -314,11 +343,15 @@ def handle(server, params):
 
     total = len(filtered)
     window = filtered[offset : offset + limit]
+    truncated = offset + len(window) < total
 
     data = {
         "total": total,
         "returned": len(window),
-        "truncated": offset + len(window) < total,
+        "truncated": truncated,
+        # Cursor for the next page; explicit null on the last page so callers
+        # can loop on `nextOffset` instead of recomputing offset+returned.
+        "nextOffset": (offset + len(window)) if truncated else None,
         "assets": [asset_ref(item) for item in window],
     }
 
@@ -336,6 +369,11 @@ def handle(server, params):
             include_referencers,
             deadline,
             warnings,
+            max_nodes=max_nodes,
+            timeout_ms=server.settings.search_timeout_ms,
+        )
+        data["relationsTruncated"] = any(
+            item.startswith("BFS_BUDGET_TRUNCATED") for item in warnings
         )
         if include_dependencies:
             data["dependencies"] = {

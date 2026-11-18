@@ -1,0 +1,41 @@
+{
+  "ts": "2026-11-18T07:14:01.867Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 2752,
+    "method": "bridge.capabilities",
+    "params": {}
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2752,
+    "result": {
+      "ok": true,
+      "data": {
+        "python": true,
+        "screenshot": true,
+        "blueprintRead": true,
+        "blueprintNodeRead": false,
+        "blueprintCompile": true,
+        "animBlueprintEdit": false,
+        "assetRegistry": true,
+        "console": true,
+        "pieControl": true,
+        "pixelStreaming": false
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 2752,
+        "durationMs": 0,
+        "queuedMs": null,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 8
+}

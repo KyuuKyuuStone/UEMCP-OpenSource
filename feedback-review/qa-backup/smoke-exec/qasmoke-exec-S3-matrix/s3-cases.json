@@ -1,0 +1,16 @@
+[
+ { "slug": "d-actor-edit", "method": "actor.edit", "params": { "operations": [{ "op": "select" }] } },
+ { "slug": "d-object-call", "method": "object.call", "params": { "path": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial", "function": "GetName", "args": [] } },
+ { "slug": "d-level-open", "method": "level.control", "params": { "action": "open", "levelPath": "/Engine/Maps/Templates/Template_Default" } },
+ { "slug": "d-material-set", "method": "material.params", "params": { "action": "set", "materialPath": "/Engine/BasicShapes/BasicShapeMaterial", "parameters": [{ "name": "x", "type": "scalar", "value": 1 }] } },
+ { "slug": "d-bp-compile", "method": "blueprint.query", "params": { "action": "compile", "assetPath": "/Game/BP_Missing.BP_Missing" } },
+ { "slug": "d-pie-start", "method": "pie.control", "params": { "action": "start" } },
+ { "slug": "d-console-stat", "method": "console.command", "params": { "command": "stat fps" } },
+ { "slug": "d-python-exec", "method": "python.exec", "params": { "code": "print(1)" } },
+ { "slug": "d-method-unknown", "method": "nope.method", "params": {} },
+ { "slug": "d-bad-params", "method": "actor.query", "params": { "limit": "abc" } },
+ { "slug": "d-asset-missing", "method": "asset.search", "params": { "path": "/Game/Nope_DoesNotExist" } },
+ { "slug": "r-log-query", "method": "log.query", "params": { "limit": 5 } },
+ { "slug": "r-object-reflect", "method": "object.reflect", "params": { "path": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial" } },
+ { "slug": "c-policies", "method": "editor.status", "params": { "sections": ["policies"] } }
+]

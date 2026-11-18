@@ -1,0 +1,34 @@
+{
+  "ts": "2026-11-18T06:54:00.119Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9874,
+    "method": "blueprint.query",
+    "params": {
+      "action": "compile",
+      "assetPath": "/Game/BP_Missing.BP_Missing"
+    }
+  },
+  "httpStatus": 403,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 9874,
+    "error": {
+      "code": -32003,
+      "message": "Write operations are disabled (allowWrite=false)",
+      "data": {
+        "errorCode": "PERMISSION_DENIED",
+        "retryable": false,
+        "details": {
+          "gate": "bridge.allowWrite",
+          "origin": "bridge",
+          "stage": "rpc"
+        }
+      }
+    }
+  },
+  "durationMs": 10
+}

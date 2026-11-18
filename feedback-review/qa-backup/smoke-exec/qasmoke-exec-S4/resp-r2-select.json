@@ -1,0 +1,59 @@
+{
+  "ts": "2026-11-18T07:06:10.132Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 4201,
+    "method": "actor.edit",
+    "params": {
+      "operations": [
+        {
+          "op": "select",
+          "selector": {
+            "kind": "actorPath",
+            "value": "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_UAID_00FFAABBCCDD161603_1473696936"
+          },
+          "mode": "replace"
+        }
+      ]
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 4201,
+    "result": {
+      "ok": true,
+      "data": {
+        "dryRun": false,
+        "results": [
+          {
+            "index": 0,
+            "op": "select",
+            "ok": true,
+            "modified": [
+              "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_UAID_00FFAABBCCDD161603_1473696936"
+            ]
+          }
+        ],
+        "summary": {
+          "requested": 1,
+          "succeeded": 1,
+          "failed": 0,
+          "rolledBack": false
+        }
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 4201,
+        "durationMs": 264,
+        "queuedMs": 234,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 277
+}

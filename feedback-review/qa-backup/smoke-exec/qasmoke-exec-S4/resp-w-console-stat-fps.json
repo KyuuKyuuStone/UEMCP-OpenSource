@@ -1,0 +1,42 @@
+{
+  "ts": "2026-11-18T07:04:23.891Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 4207,
+    "method": "console.command",
+    "params": {
+      "command": "stat fps",
+      "timeoutMs": 8000,
+      "captureOutput": true
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 4207,
+    "result": {
+      "ok": true,
+      "data": {
+        "command": "stat fps",
+        "dispatched": true,
+        "output": null,
+        "outputAvailable": false,
+        "durationMs": 16
+      },
+      "warnings": [
+        "OUTPUT_CAPTURE_UNSUPPORTED"
+      ],
+      "meta": {
+        "requestId": 4207,
+        "durationMs": 266,
+        "queuedMs": 250,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 263
+}

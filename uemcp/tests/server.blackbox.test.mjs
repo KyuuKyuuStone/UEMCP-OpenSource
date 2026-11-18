@@ -1048,3 +1048,197 @@ after(async () => {
     } catch { /* best effort */ }
   }
 });
+
+// ---------- tsfix（f72451d4）：B2/B3/B4/B7/B9 + client 捕获 + origin/stage ----------
+
+async function tsfixReadAudit(home) {
+  await new Promise((r) => setTimeout(r, 300)); // 等待审计落盘
+  const dir = join(home, "audit");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".jsonl"))
+    .flatMap((f) => readFileSync(join(dir, f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)));
+}
+
+async function tsfixWaitConnected(port, ms = 8000) {
+  const t0 = Date.now();
+  let h = null;
+  while (Date.now() - t0 < ms) {
+    h = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+    if (h.bridge?.connected === true) return h;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return h;
+}
+
+test("tsfix B7/client: read-only server — six read tools audited with client capture + policySnapshot.ts", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home);
+  const srv = startServer(
+    ["--port", "19180", "--policy", "read-only", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home), 19180,
+  );
+  try {
+    await waitHealth(19180);
+    const sid = await initSession(19180);
+    const calls = [
+      ["ue_editor_status", {}],
+      ["ue_actor_query", {}],
+      ["ue_asset_search", { query: "Test" }],
+      ["ue_reflect", { target: "/Game/M_Test" }],
+      ["ue_log_query", {}],
+      ["ue_policy_explain", {}],
+    ];
+    for (const [name, args] of calls) {
+      const r = await rpc(19180, sid, name, args);
+      assert.equal(r.http, 200, `${name} http status`);
+      assert.equal(SC(r)?.ok, true, `${name} must succeed against mock: ${JSON.stringify(SC(r)?.error ?? {})}`);
+    }
+    const recs = await tsfixReadAudit(home);
+    for (const [name] of calls) {
+      const j = recs.find((x) => x.tool === name);
+      assert.ok(j, `${name} must have an audit record (B7 unified read-tool coverage)`);
+      assert.equal(j.decision, "allowed");
+      assert.equal(j.ok, true);
+      assert.equal(j.client?.name, "code-test", "clientInfo captured at initialize must reach the audit record");
+      assert.equal(j.policyMode, "read-only");
+      assert.equal(j.policySnapshot?.ts?.mode, "read-only");
+      assert.equal(j.policySnapshot?.ts?.source, "cli");
+      assert.equal(j.policySnapshot?.ts?.allowWrite, false);
+      assert.ok(j.sessionId, "sessionId must be recorded");
+      // index.ts:78 既有实现：HTTP 进程记 "streamable-http"，stdio 进程记 "stdio"
+      assert.equal(j.transport, "streamable-http");
+    }
+  } finally {
+    await stop(srv.proc);
+    await stop(bridge.proc);
+  }
+});
+
+test("tsfix B2/B1/B4: --health-full mock → status data.build + /health passthrough; kill mock → all fields cleared", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home, ["--health-full"]);
+  const srv = startServer(
+    ["--port", "19181", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home), 19181,
+  );
+  try {
+    await waitHealth(19181);
+    const health = await tsfixWaitConnected(19181);
+    assert.equal(health.bridge?.connected, true, "watchdog must connect to the --health-full mock");
+    assert.ok(/^mock-/.test(health.bridge.instanceId ?? ""), "/health must pass through watchdog-retained instanceId");
+    assert.equal(health.bridge.buildHash, "0".repeat(64));
+    assert.ok(health.bridge.buildTime, "/health must pass through buildTime");
+    assert.ok(health.bridge.sourcePath, "/health must pass through sourcePath");
+    assert.equal(health.bridge.capabilities?.pixelStreaming, true);
+    assert.equal(health.bridge.bridgeProtocol, 1);
+    assert.equal(health.bridge.schemaVersion, 1);
+    const sid = await initSession(19181);
+    const r = await rpc(19181, sid, "ue_editor_status", {});
+    assert.equal(SC(r)?.ok, true);
+    const build = SC(r).data.build;
+    assert.ok(build, "B2: connected + fields present → data.build injected by TS");
+    assert.equal(build.instanceId, health.bridge.instanceId);
+    assert.equal(build.buildHash, "0".repeat(64));
+    assert.equal(build.buildTime, health.bridge.buildTime);
+    assert.equal(build.sourcePath, health.bridge.sourcePath);
+    const recs = await tsfixReadAudit(home);
+    const j = recs.find((x) => x.tool === "ue_editor_status");
+    assert.ok(j, "status call must be audited");
+    assert.equal(j.instanceId, build.instanceId, "audit build identity must match the injected status build");
+    assert.equal(j.buildHash, "0".repeat(64));
+    assert.equal(j.schemaVersion, 1);
+    // B4：杀死 mock → 下一次探测降级，所有保留字段必须清除
+    await stop(bridge.proc);
+    let down = null;
+    const t1 = Date.now();
+    while (Date.now() - t1 < 12000) {
+      await new Promise((r2) => setTimeout(r2, 300));
+      down = await (await fetch("http://127.0.0.1:19181/health")).json();
+      if (down.bridge?.connected === false) break;
+    }
+    assert.equal(down.bridge?.connected, false, "B4: watchdog must mark down after the bridge dies");
+    for (const k of ["url", "instanceId", "buildHash", "buildTime", "sourcePath", "capabilities", "bridgeProtocol", "schemaVersion"]) {
+      assert.ok(!(k in down.bridge), `B4: ${k} must be cleared on disconnect (no stale impersonation)`);
+    }
+    const r2 = await rpc(19181, sid, "ue_editor_status", {});
+    assert.equal(SC(r2)?.ok, false, "status must fail while disconnected");
+    assert.ok(!SC(r2).data?.build, "no stale build injection after disconnect");
+  } finally {
+    await stop(srv.proc);
+    await stop(bridge.proc);
+  }
+});
+
+test("tsfix B3: bridge pixelStreaming:false → ue_viewport_capture CAPABILITY_UNAVAILABLE (audited)", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home, ["--health-full", "--no-pixel-streaming"]);
+  const srv = startServer(
+    ["--port", "19182", "--policy", "full", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home), 19182,
+  );
+  try {
+    await waitHealth(19182);
+    const health = await tsfixWaitConnected(19182);
+    assert.equal(health.bridge?.connected, true, "watchdog must be connected before the capability precheck");
+    assert.equal(health.bridge.capabilities?.pixelStreaming, false);
+    const sid = await initSession(19182);
+    const r = await rpc(19182, sid, "ue_viewport_capture", { returnMode: "file" });
+    assert.equal(SC(r)?.ok, false);
+    assert.equal(SC(r).error.code, "CAPABILITY_UNAVAILABLE");
+    const recs = await tsfixReadAudit(home);
+    const j = recs.find((x) => x.tool === "ue_viewport_capture");
+    assert.ok(j, "capability rejection must be audited");
+    assert.equal(j.ok, false);
+    assert.equal(j.errorCode, "CAPABILITY_UNAVAILABLE");
+  } finally {
+    await stop(srv.proc);
+    await stop(bridge.proc);
+  }
+});
+
+test("tsfix B9: stale discovery file → server never connects (default-port fallback isolated)", async () => {
+  const home = newHome();
+  const bridge = await startBridge(home, ["--stale"]);
+  const srv = startServer(["--port", "19183"], serverEnv(home), 19183);
+  try {
+    await waitHealth(19183);
+    await new Promise((r) => setTimeout(r, 1500)); // 给发现＋看门狗首轮探测时间
+    const health = await (await fetch("http://127.0.0.1:19183/health")).json();
+    assert.equal(health.bridge?.connected, false, "stale discovery must be respected end-to-end");
+  } finally {
+    await stop(srv.proc);
+    await stop(bridge.proc);
+  }
+});
+
+test("tsfix B-3.7/B6: PYTHON_ERROR details origin/stage reach audit; no traceback/code text; mode backfilled", async () => {
+  const home = newHome();
+  // mock 桥默认 deny exec（与真实桥接一致），必须显式 --allow-exec 才能到达 PYTHON_ERROR 分支
+  const bridge = await startBridge(home, ["--fail-python", "--allow-exec"]);
+  const srv = startServer(
+    ["--port", "19184", "--policy", "full", "--allow-exec", "--bridge-url", `http://127.0.0.1:${bridge.info.port}`, "--bridge-token", bridge.info.token],
+    serverEnv(home), 19184,
+  );
+  try {
+    await waitHealth(19184);
+    const sid = await initSession(19184);
+    const r = await rpc(19184, sid, "ue_python_exec", { code: "raise ValueError('x')" });
+    assert.equal(SC(r)?.ok, false);
+    assert.equal(SC(r).error.code, "PYTHON_ERROR");
+    const recs = await tsfixReadAudit(home);
+    const j = recs.find((x) => x.tool === "ue_python_exec");
+    assert.ok(j, "failed python exec must be audited");
+    assert.equal(j.ok, false);
+    assert.equal(j.errorCode, "PYTHON_ERROR");
+    assert.equal(j.origin, "bridge", "details.origin must reach the audit record");
+    assert.equal(j.stage, "python_exec", "details.stage must reach the audit record");
+    assert.equal(j.argsSummary?.mode, "exec", "B6: effective mode backfilled");
+    assert.ok(j.argsSummary?.codeSha256, "hash-only argsSummary");
+    const s = JSON.stringify(j);
+    assert.ok(!s.includes("Traceback"), "privacy: traceback full text must not enter the audit record");
+    assert.ok(!s.includes("raise ValueError"), "privacy: python source text must not enter the audit record");
+  } finally {
+    await stop(srv.proc);
+    await stop(bridge.proc);
+  }
+});

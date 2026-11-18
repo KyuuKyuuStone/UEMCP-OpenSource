@@ -1,0 +1,33 @@
+{
+  "ts": "2026-11-18T06:54:00.325Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 8227,
+    "method": "console.command",
+    "params": {
+      "command": "stat fps"
+    }
+  },
+  "httpStatus": 403,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 8227,
+    "error": {
+      "code": -32003,
+      "message": "Console commands are disabled (allowConsole=false)",
+      "data": {
+        "errorCode": "PERMISSION_DENIED",
+        "retryable": false,
+        "details": {
+          "gate": "bridge.allowConsole",
+          "origin": "bridge",
+          "stage": "rpc"
+        }
+      }
+    }
+  },
+  "durationMs": 10
+}

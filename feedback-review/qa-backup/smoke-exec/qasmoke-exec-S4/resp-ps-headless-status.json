@@ -1,0 +1,65 @@
+{
+  "ts": "2026-11-18T07:14:01.959Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1688,
+    "method": "editor.status",
+    "params": {}
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1688,
+    "result": {
+      "ok": true,
+      "data": {
+        "editor": {
+          "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+          "pluginVersion": "0.1.5",
+          "bridgeProtocol": 1,
+          "processId": 60028,
+          "isPieRunning": false,
+          "isSimulating": false,
+          "isCompiling": false,
+          "isAssetRegistryLoading": false
+        },
+        "level": {
+          "path": "/Temp/Untitled_1.Untitled_1",
+          "name": "Untitled_1",
+          "isDirty": false,
+          "isPartitioned": false,
+          "dirtyPackageCount": 0
+        },
+        "selection": {
+          "count": 0,
+          "actors": [],
+          "truncated": false
+        },
+        "capabilities": {
+          "python": true,
+          "screenshot": true,
+          "blueprintRead": true,
+          "blueprintNodeRead": false,
+          "blueprintCompile": true,
+          "animBlueprintEdit": false,
+          "assetRegistry": true,
+          "console": true,
+          "pieControl": true,
+          "pixelStreaming": false
+        }
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 1688,
+        "durationMs": 0,
+        "queuedMs": 0,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 13
+}

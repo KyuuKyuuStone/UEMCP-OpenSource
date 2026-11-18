@@ -1,0 +1,39 @@
+{
+  "ts": "2026-11-18T07:25:05.646Z",
+  "tool": "qa-exec-bridge",
+  "bridgePort": 18778,
+  "projectDir": "C:/Users/Administrator/Documents/Unreal Projects/UEMCP_Smoke_Blank",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 3124,
+    "method": "python.exec",
+    "params": {
+      "code": "import unreal\nresult = unreal.EditorAssetLibrary.rename_asset(\"/Game/__QA_NoSuchAsset__.No\", \"/Game/__QA_NoSuchAsset2__.No2\")\nprint(result)\nresult + 1\n"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 3124,
+    "result": {
+      "ok": true,
+      "data": {
+        "mode": "exec",
+        "result": null,
+        "stdout": "False\n",
+        "stderr": "",
+        "durationMs": 0,
+        "timedOut": false
+      },
+      "warnings": [],
+      "meta": {
+        "requestId": 3124,
+        "durationMs": 0,
+        "queuedMs": 0,
+        "ueVersion": "5.7.4-51494982+++UE5+Release-5.7",
+        "pluginVersion": "0.1.5"
+      }
+    }
+  },
+  "durationMs": 10
+}

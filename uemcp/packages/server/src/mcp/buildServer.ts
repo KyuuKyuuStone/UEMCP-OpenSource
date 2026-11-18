@@ -9,7 +9,7 @@ import type { ToolContext } from "../tools/common.js";
 import { registerTools } from "./registerTools.js";
 
 export const SERVER_NAME = "uemcp";
-export const SERVER_VERSION = "0.1.5";
+export const SERVER_VERSION = "0.1.6";
 // TODO(协议版本 2025-11-25)：维持三版本表。按 HANDOFF.md §10-6 与 README-DEV §8-1
 // 裁决：SDK 1.32 已支持 2025-11-25，但放开协商需先更新架构 §3.6 三版本表（含测试
 // 计划 PROTO-17 基线），文档结论归文档岗维护，Server 侧不自行动——若裁决通过，
@@ -22,6 +22,12 @@ export function buildMcpServer(baseCtx: ToolContext): McpServer {
     { capabilities: { tools: { listChanged: false } } },
   );
   const ctx: ToolContext = { ...baseCtx, elicit: makeElicit(server) };
+  // B-3.1 审计 client 身份：initialize 完成后从 SDK 取 clientInfo 回填共享 ctx
+  //（registerTools 的 reqCtx 由 ctx 展开，工具 handler/审计即可见；stdio/http 均经此处）。
+  server.server.oninitialized = () => {
+    const cv = server.server.getClientVersion();
+    if (cv) ctx.clientInfo = { name: cv.name, version: cv.version };
+  };
   registerTools(server, ctx);
   return server;
 }

@@ -4,6 +4,9 @@
  *       3) ~/.uemcp/bridge.json；4) http://127.0.0.1:18778 + UEMCP_BRIDGE_TOKEN。
  * 校验：结构合法 + schemaVersion===1 + pid 存活 + GET /health 校验 app/pid/startedAt；
  *       任一失败视为陈旧，转向下一来源；全部失败 → null（调用侧 BRIDGE_UNAVAILABLE）。
+ * B-3.9（保守裁决）：schemaVersion===1 硬门槛保留；不符时 warn 带 expected/actual；
+ *       尊重桥接自标记 stale:true（warn staleReason/staleAt 后拒绝采用）；
+ *       完整版本协商/迁移暂缓（见架构 §2.4 迁移小节）。
  * Critical-2：显式 --project 时硬失败（禁止回退到 bridge.json/默认端口）；
  *             路径规范化（斜杠统一/去尾）hash 与比较共用，比较大小写不敏感（Windows）。
  */
@@ -77,6 +80,37 @@ function validStructure(f: unknown): f is BridgeDiscoveryFile {
   );
 }
 
+/**
+ * B-3.9：发现文件采用门槛＝结构合法（含 schemaVersion===1 硬门槛）＋未自标记 stale。
+ * schemaVersion 不符 → warn 带 expected/actual（完整协商/迁移暂缓，保守拒绝）；
+ * stale:true → warn 带 staleReason/staleAt（桥接自标记陈旧，如编辑器已退出）。
+ */
+export function acceptDiscovery(
+  raw: unknown,
+  file: string,
+  log: Logger,
+): raw is BridgeDiscoveryFile {
+  if (!validStructure(raw)) {
+    const sv =
+      typeof raw === "object" && raw !== null
+        ? (raw as Record<string, unknown>).schemaVersion
+        : undefined;
+    if (sv !== undefined && sv !== 1) {
+      log.warn("bridge_discovery_schema_version", { file, expected: 1, actual: sv });
+    }
+    return false;
+  }
+  if (raw.stale === true) {
+    log.warn("bridge_discovery_stale", {
+      file,
+      staleReason: raw.staleReason,
+      staleAt: raw.staleAt,
+    });
+    return false;
+  }
+  return true;
+}
+
 async function readJson(file: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(file, "utf8"));
@@ -134,17 +168,20 @@ export async function resolveBridge(
     const bridgesDir = join(home, ".uemcp", "bridges");
     const hashFile = join(bridgesDir, `${projectHash(opts.projectDir)}.json`);
     const hashRaw = await readJson(hashFile);
-    let raw: BridgeDiscoveryFile | null = validStructure(hashRaw) ? hashRaw : null;
+    let raw: BridgeDiscoveryFile | null = acceptDiscovery(hashRaw, hashFile, log)
+      ? hashRaw
+      : null;
     let matchedBy = "project-hash";
-    if (!validStructure(raw) || !equalProjectDir(raw.projectDir, opts.projectDir)) {
+    if (!raw || !equalProjectDir(raw.projectDir, opts.projectDir)) {
       // hash 文件未命中（如大小写差异导致 hash 不同）→ 扫描目录按 projectDir 内容匹配
       raw = null;
       try {
         const files = await readdir(bridgesDir);
         for (const f of files) {
           if (!f.endsWith(".json")) continue;
-          const cand = await readJson(join(bridgesDir, f));
-          if (validStructure(cand) && equalProjectDir(cand.projectDir, opts.projectDir)) {
+          const candFile = join(bridgesDir, f);
+          const cand = await readJson(candFile);
+          if (acceptDiscovery(cand, candFile, log) && equalProjectDir(cand.projectDir, opts.projectDir)) {
             raw = cand;
             matchedBy = "project-scan";
             break;
@@ -176,7 +213,7 @@ export async function resolveBridge(
   const bridgeJsonFile = join(home, ".uemcp", "bridge.json");
   {
     const raw = await readJson(bridgeJsonFile);
-    if (validStructure(raw)) {
+    if (acceptDiscovery(raw, bridgeJsonFile, log)) {
       if (!pidAlive(raw.pid)) {
         log.warn("bridge_discovery_stale_pid", { file: bridgeJsonFile, pid: raw.pid });
       } else if (!(await healthCheck(raw.url, raw))) {
